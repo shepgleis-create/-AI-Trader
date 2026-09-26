@@ -55,8 +55,14 @@
         <div id="scanout" class="empty">No scan run yet.</div>
       </div>
       <div class="card wide">
+        <div class="label">Paper Execution Test</div>
+        <p class="muted">After a scan, a top candidate scoring 78+ can be submitted as a tiny paper-market order. Hard limit: $25 max, 3 positions max, cash only, no shorts, no live endpoint.</p>
+        <button id="paperbuy" disabled>Run a scan first</button>
+        <div id="paperresult" class="muted"></div>
+      </div>
+      <div class="card wide">
         <div class="label">Safety</div>
-        <p class="muted" style="margin-bottom:0">This build can read your paper account and market data only. A server-side lock rejects a live Alpaca endpoint, and no order-placement endpoint exists yet.</p>
+        <p class="muted" style="margin-bottom:0">This build is hard-locked to Alpaca paper trading. The execution endpoint rejects a live Alpaca URL and enforces position/order-size limits on the server.</p>
       </div>
     </section>
 
@@ -66,6 +72,8 @@
 <script>
   const money = (n) => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n || 0));
   const pct = (n) => (Number(n || 0) * 100).toFixed(2) + '%';
+  let topCandidate = null;
+  let marketIsOpen = false;
 
   async function load() {
     const btn = document.getElementById('refresh');
@@ -79,7 +87,9 @@
       document.getElementById('portfolio').textContent = money(d.account.portfolio_value);
       document.getElementById('cash').textContent = money(d.account.cash);
       document.getElementById('buying').textContent = money(d.account.buying_power);
+      marketIsOpen = Boolean(d.market.is_open);
       document.getElementById('market').textContent = d.market.is_open ? 'OPEN' : 'CLOSED';
+      updatePaperButton();
       document.getElementById('market').className = 'value ' + (d.market.is_open ? 'positive' : '');
       document.getElementById('next').textContent = d.market.is_open
         ? 'Next close: ' + new Date(d.market.next_close).toLocaleString()
@@ -120,6 +130,8 @@
         return;
       }
 
+      topCandidate = d.candidates[0] || null;
+      updatePaperButton();
       box.className = '';
       box.innerHTML =
         '<div class="muted" style="margin-top:10px">Analyzed '+d.analyzed+' of '+d.universe_size+' symbols. Higher scores mean more of the current rules agree; they do not predict guaranteed profit.</div>' +
@@ -139,8 +151,55 @@
     }
   }
 
+  function updatePaperButton() {
+    const btn = document.getElementById('paperbuy');
+    if (!topCandidate) {
+      btn.disabled = true;
+      btn.textContent = 'Run a scan first';
+      return;
+    }
+    if (topCandidate.score < 78) {
+      btn.disabled = true;
+      btn.textContent = 'Top score '+topCandidate.score+' — below 78 threshold';
+      return;
+    }
+    if (!marketIsOpen) {
+      btn.disabled = true;
+      btn.textContent = 'Market closed — '+topCandidate.symbol+' qualifies ('+topCandidate.score+')';
+      return;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Paper Buy '+topCandidate.symbol+' — max $25';
+  }
+
+  async function paperBuy() {
+    if (!topCandidate) return;
+    const btn = document.getElementById('paperbuy');
+    const out = document.getElementById('paperresult');
+    btn.disabled = true;
+    out.textContent = 'Submitting paper order…';
+    try {
+      const r = await fetch('/api/paper-order', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({symbol: topCandidate.symbol, score: topCandidate.score})
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Paper order failed');
+      out.className = 'positive';
+      out.textContent = d.message + ' Status: ' + d.status;
+      await load();
+    } catch (e) {
+      out.className = 'error';
+      out.textContent = e.message || 'Paper order failed.';
+    } finally {
+      updatePaperButton();
+    }
+  }
+
   document.getElementById('refresh').addEventListener('click', load);
   document.getElementById('scan').addEventListener('click', runScan);
+  document.getElementById('paperbuy').addEventListener('click', paperBuy);
   load();
 </script>
 </body>
