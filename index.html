@@ -49,8 +49,14 @@
         <div id="positions" class="empty">Loading…</div>
       </div>
       <div class="card wide">
+        <div class="label">Market Scanner</div>
+        <p class="muted">Scans a starter universe of liquid stocks and ETFs using trend, momentum, RSI and volume signals.</p>
+        <button id="scan">Run Market Scan</button>
+        <div id="scanout" class="empty">No scan run yet.</div>
+      </div>
+      <div class="card wide">
         <div class="label">Safety</div>
-        <p class="muted" style="margin-bottom:0">This build can read your paper account only. A server-side lock rejects a live Alpaca endpoint, and no order-placement endpoint exists yet.</p>
+        <p class="muted" style="margin-bottom:0">This build can read your paper account and market data only. A server-side lock rejects a live Alpaca endpoint, and no order-placement endpoint exists yet.</p>
       </div>
     </section>
 
@@ -98,7 +104,43 @@
     }
   }
 
+  async function runScan() {
+    const btn = document.getElementById('scan');
+    const box = document.getElementById('scanout');
+    btn.disabled = true;
+    box.className = 'empty';
+    box.textContent = 'Scanning market data…';
+    try {
+      const r = await fetch('/api/scan', { cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Scan failed');
+
+      if (!d.candidates?.length) {
+        box.textContent = 'No candidates returned.';
+        return;
+      }
+
+      box.className = '';
+      box.innerHTML =
+        '<div class="muted" style="margin-top:10px">Analyzed '+d.analyzed+' of '+d.universe_size+' symbols. Higher scores mean more of the current rules agree; they do not predict guaranteed profit.</div>' +
+        '<table><thead><tr><th>Symbol</th><th>Score</th><th>Price</th><th>20D</th><th>RSI</th></tr></thead><tbody>' +
+        d.candidates.map(c => {
+          const cls = c.score >= 66 ? 'positive' : (c.score < 45 ? 'negative' : '');
+          const mom = (c.momentum_20d * 100).toFixed(1) + '%';
+          const title = (c.reasons || []).join(' • ').replace(/"/g, '&quot;');
+          return '<tr title="'+title+'"><td><strong>'+c.symbol+'</strong><div class="muted">'+c.setup+'</div></td><td class="'+cls+'"><strong>'+c.score+'</strong></td><td>'+money(c.price)+'</td><td class="'+(c.momentum_20d >= 0 ? 'positive' : 'negative')+'">'+mom+'</td><td>'+Number(c.rsi14).toFixed(1)+'</td></tr>';
+        }).join('') +
+        '</tbody></table>';
+    } catch (e) {
+      box.className = 'error';
+      box.textContent = e.message || 'Scan failed.';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   document.getElementById('refresh').addEventListener('click', load);
+  document.getElementById('scan').addEventListener('click', runScan);
   load();
 </script>
 </body>
