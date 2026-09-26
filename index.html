@@ -55,6 +55,12 @@
         <div id="scanout" class="empty">No scan run yet.</div>
       </div>
       <div class="card wide">
+        <div class="label">LLM Decision Layer</div>
+        <p class="muted">The LLM reviews the scanner shortlist and returns BUY or SKIP. The risk engine can still veto it. This can be tested even while the market is closed.</p>
+        <button id="aianalyze">Run AI Analysis</button>
+        <div id="aiout" class="empty">AI has not analyzed the current market yet.</div>
+      </div>
+      <div class="card wide">
         <div class="label">Paper Execution Test</div>
         <p class="muted">After a scan, a top candidate scoring 78+ can be submitted as a tiny paper-market order. Hard limit: $25 max, 3 positions max, cash only, no shorts, no live endpoint.</p>
         <button id="paperbuy" disabled>Run a scan first</button>
@@ -62,8 +68,8 @@
       </div>
       <div class="card wide">
         <div class="label">Automation</div>
-        <div class="value" style="font-size:20px">Installed · OFF by default</div>
-        <p class="muted">A weekday cycle is configured for 15:00 UTC. When enabled, it can make at most one new $25 paper entry per cycle, hold at most 3 positions, cut positions near −3%, and take profits near +6%.</p>
+        <div class="value" style="font-size:20px">Autonomous agent · OFF by default</div>
+        <p class="muted">When enabled, the scheduled cycle scans the market, asks the LLM to BUY or SKIP, applies the hard risk gate, and can submit the paper order automatically. It also manages −3% stop exits and +6% profit exits.</p>
       </div>
       <div class="card wide">
         <div class="label">Recent Paper Orders</div>
@@ -206,6 +212,31 @@
     }
   }
 
+  async function runAiAnalysis() {
+    const btn = document.getElementById('aianalyze');
+    const box = document.getElementById('aiout');
+    btn.disabled = true;
+    box.className = 'empty';
+    box.textContent = 'LLM is reviewing the current shortlist…';
+    try {
+      const r = await fetch('/api/ai-preview', { cache:'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'AI analysis failed');
+      const x = d.decision;
+      box.className = x.action === 'BUY' ? 'positive' : 'muted';
+      box.innerHTML =
+        '<div style="font-size:20px;font-weight:800;margin-top:10px">'+x.action+(x.symbol ? ' '+x.symbol : '')+'</div>' +
+        '<div style="margin-top:6px">Confidence: '+x.confidence+'/100</div>' +
+        '<div class="muted" style="margin-top:8px">'+x.rationale+'</div>' +
+        '<div class="muted" style="margin-top:8px;font-size:12px">Model: '+d.model+'</div>';
+    } catch (e) {
+      box.className = 'error';
+      box.textContent = e.message || 'AI analysis failed.';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   async function loadHistory() {
     const box = document.getElementById('history');
     try {
@@ -231,6 +262,7 @@
   document.getElementById('refresh').addEventListener('click', async () => { await load(); await loadHistory(); });
   document.getElementById('scan').addEventListener('click', runScan);
   document.getElementById('paperbuy').addEventListener('click', paperBuy);
+  document.getElementById('aianalyze').addEventListener('click', runAiAnalysis);
   load();
   loadHistory();
 </script>
