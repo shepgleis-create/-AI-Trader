@@ -61,8 +61,17 @@
         <div id="paperresult" class="muted"></div>
       </div>
       <div class="card wide">
+        <div class="label">Automation</div>
+        <div class="value" style="font-size:20px">Installed · OFF by default</div>
+        <p class="muted">A weekday cycle is configured for 15:00 UTC. When enabled, it can make at most one new $25 paper entry per cycle, hold at most 3 positions, cut positions near −3%, and take profits near +6%.</p>
+      </div>
+      <div class="card wide">
+        <div class="label">Recent Paper Orders</div>
+        <div id="history" class="empty">Loading…</div>
+      </div>
+      <div class="card wide">
         <div class="label">Safety</div>
-        <p class="muted" style="margin-bottom:0">This build is hard-locked to Alpaca paper trading. The execution endpoint rejects a live Alpaca URL and enforces position/order-size limits on the server.</p>
+        <p class="muted" style="margin-bottom:0">This build is hard-locked to Alpaca paper trading. Automatic execution remains disabled unless AUTO_TRADING_ENABLED is explicitly set to true in Vercel.</p>
       </div>
     </section>
 
@@ -197,10 +206,33 @@
     }
   }
 
-  document.getElementById('refresh').addEventListener('click', load);
+  async function loadHistory() {
+    const box = document.getElementById('history');
+    try {
+      const r = await fetch('/api/history', { cache:'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Could not load history');
+      const orders = (d.orders || []).slice(0, 12);
+      if (!orders.length) {
+        box.className = 'empty';
+        box.textContent = 'No paper orders yet.';
+        return;
+      }
+      box.className = '';
+      box.innerHTML = '<table><thead><tr><th>Symbol</th><th>Side</th><th>Status</th><th>Filled</th></tr></thead><tbody>' +
+        orders.map(o => '<tr><td><strong>'+o.symbol+'</strong></td><td>'+String(o.side || '').toUpperCase()+'</td><td>'+o.status+'</td><td>'+(o.filled_avg_price ? money(o.filled_avg_price) : '—')+'</td></tr>').join('') +
+        '</tbody></table>';
+    } catch (e) {
+      box.className = 'error';
+      box.textContent = e.message || 'Could not load history.';
+    }
+  }
+
+  document.getElementById('refresh').addEventListener('click', async () => { await load(); await loadHistory(); });
   document.getElementById('scan').addEventListener('click', runScan);
   document.getElementById('paperbuy').addEventListener('click', paperBuy);
   load();
+  loadHistory();
 </script>
 </body>
 </html>
