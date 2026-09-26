@@ -1,4 +1,5 @@
 import { fetchCandidates } from '../lib/strategy.js';
+import { getAiTradeDecision } from '../lib/ai.js';
 
 const ENTRY_SCORE = 78;
 const MAX_POSITIONS = 3;
@@ -14,6 +15,7 @@ export default async function handler(req, res) {
   const baseUrl = process.env.ALPACA_BASE_URL || 'https://paper-api.alpaca.markets';
   const cronSecret = process.env.CRON_SECRET;
   const enabled = String(process.env.AUTO_TRADING_ENABLED || '').toLowerCase() === 'true';
+  const openaiKey = process.env.OPENAI_API_KEY;
 
   if (!key || !secret) return res.status(500).json({ error: 'Missing Alpaca credentials' });
   if (!cronSecret) return res.status(503).json({ error: 'CRON_SECRET is not configured yet' });
@@ -92,53 +94,93 @@ export default async function handler(req, res) {
     const exitingSymbols = new Set(actions.map(a => a.symbol));
     const effectivePositions = positions.filter(p => !exitingSymbols.has(p.symbol));
 
-    // At most one entry per daily cycle.
+    // At most one AI-approved entry per daily cycle.
     if (effectivePositions.length < MAX_POSITIONS) {
       const candidates = await fetchCandidates(key, secret);
       const held = new Set(positions.map(p => p.symbol));
       const ordered = new Set(openOrders.map(o => o.symbol));
-      const pick = candidates.find(c =>
-        c.score >= ENTRY_SCORE &&
+      const eligible = candidates.filter(c =>
+        c.score >= 66 &&
         !held.has(c.symbol) &&
         !ordered.has(c.symbol)
-      );
+      ).slice(0, 5);
 
-      if (pick) {
-        const portfolioValue = Number(account.portfolio_value || 0);
-        const cash = Number(account.cash || 0);
-        const notional = Math.max(1, Math.min(MAX_ENTRY_DOLLARS, portfolioValue * 0.02));
+      if (eligible.length) {
+        if (!openaiKey) {
+          actions.push({
+            type: 'ai_unavailable',
+            reason: 'OPENAI_API_KEY is not configured, so no automatic entry is allowed.'
+          });
+        } else {
+          const ai = await getAiTradeDecision({
+            apiKey: openaiKey,
+            candidates: eligible,
+            positions,
+            account
+          });
 
-        if (cash >= notional) {
-          if (enabled) {
-            const orderRes = await fetch(`${baseUrl}/v2/orders`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                symbol: pick.symbol,
-                notional: notional.toFixed(2),
-                side: 'buy',
-                type: 'market',
-                time_in_force: 'day',
-                client_order_id: `aiauto-${pick.symbol.toLowerCase()}-${Date.now()}`
-              })
-            });
-            const order = await orderRes.json();
+          actions.push({
+            type: 'ai_decision',
+            action: ai.action,
+            symbol: ai.symbol,
+            confidence: ai.confidence,
+            rationale: ai.rationale,
+            model: ai.model
+          });
+
+          const pick = ai.action === 'BUY'
+            ? eligible.find(c => c.symbol === ai.symbol)
+            : null;
+
+          // Quant/risk gate remains mandatory even after AI says BUY.
+          if (pick && pick.score >= ENTRY_SCORE && ai.confidence >= 60) {
+            const portfolioValue = Number(account.portfolio_value || 0);
+            const cash = Number(account.cash || 0);
+            const notional = Math.max(1, Math.min(MAX_ENTRY_DOLLARS, portfolioValue * 0.02));
+
+            if (cash >= notional) {
+              if (enabled) {
+                const orderRes = await fetch(`${baseUrl}/v2/orders`, {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({
+                    symbol: pick.symbol,
+                    notional: notional.toFixed(2),
+                    side: 'buy',
+                    type: 'market',
+                    time_in_force: 'day',
+                    client_order_id: `aiauto-${pick.symbol.toLowerCase()}-${Date.now()}`
+                  })
+                });
+                const order = await orderRes.json();
+                actions.push({
+                  type: 'entry',
+                  symbol: pick.symbol,
+                  score: pick.score,
+                  ai_confidence: ai.confidence,
+                  notional,
+                  submitted: orderRes.ok,
+                  order_id: order?.id || null,
+                  status: order?.status || null,
+                  error: orderRes.ok ? null : order?.message
+                });
+              } else {
+                actions.push({
+                  type: 'entry_dry_run',
+                  symbol: pick.symbol,
+                  score: pick.score,
+                  ai_confidence: ai.confidence,
+                  notional
+                });
+              }
+            }
+          } else if (ai.action === 'BUY' && pick) {
             actions.push({
-              type: 'entry',
+              type: 'risk_reject',
               symbol: pick.symbol,
+              reason: 'AI buy did not meet the mandatory score/confidence gate.',
               score: pick.score,
-              notional,
-              submitted: orderRes.ok,
-              order_id: order?.id || null,
-              status: order?.status || null,
-              error: orderRes.ok ? null : order?.message
-            });
-          } else {
-            actions.push({
-              type: 'entry_dry_run',
-              symbol: pick.symbol,
-              score: pick.score,
-              notional
+              ai_confidence: ai.confidence
             });
           }
         }
