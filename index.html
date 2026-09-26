@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Trader</title>
+  <style>
+    body{font-family:system-ui,-apple-system,sans-serif;background:#0b0d10;color:#f5f7fa;margin:0;padding:24px}
+    .card{max-width:720px;margin:8vh auto;background:#151922;border:1px solid #2a3140;border-radius:20px;padding:24px}
+    h1{margin-top:0}.muted{color:#9aa4b2}.ok{color:#54d38a}.bad{color:#ff6b6b}
+    button{background:#fff;color:#111;border:0;border-radius:12px;padding:12px 16px;font-weight:700;font-size:16px}
+    pre{white-space:pre-wrap;background:#0d1117;padding:16px;border-radius:12px;overflow:auto}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>AI Trader</h1>
+    <p class="muted">Connection test only. This version cannot place trades.</p>
+    <button id="check">Check Alpaca Connection</button>
+    <pre id="out">Not checked yet.</pre>
+  </div>
+  <script>
+    const btn = document.getElementById('check');
+    const out = document.getElementById('out');
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      out.textContent = 'Checking...';
+      try {
+        const r = await fetch('/api/account');
+        const data = await r.json();
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        out.textContent = 'Connection request failed.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
