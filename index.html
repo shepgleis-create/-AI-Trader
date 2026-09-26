@@ -2,39 +2,104 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>AI Trader</title>
   <style>
-    body{font-family:system-ui,-apple-system,sans-serif;background:#0b0d10;color:#f5f7fa;margin:0;padding:24px}
-    .card{max-width:720px;margin:8vh auto;background:#151922;border:1px solid #2a3140;border-radius:20px;padding:24px}
-    h1{margin-top:0}.muted{color:#9aa4b2}.ok{color:#54d38a}.bad{color:#ff6b6b}
-    button{background:#fff;color:#111;border:0;border-radius:12px;padding:12px 16px;font-weight:700;font-size:16px}
-    pre{white-space:pre-wrap;background:#0d1117;padding:16px;border-radius:12px;overflow:auto}
+    :root{color-scheme:dark}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#090b0f;color:#f5f7fa;margin:0;padding:18px}
+    .wrap{max-width:880px;margin:24px auto}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}
+    h1{margin:0;font-size:30px;letter-spacing:-.7px}
+    .muted{color:#929cab}.badge{display:inline-flex;align-items:center;gap:7px;border:1px solid #2b3442;background:#141923;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800}
+    .dot{width:8px;height:8px;border-radius:50%;background:#f5b942}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .card{background:#131821;border:1px solid #262e3b;border-radius:18px;padding:18px}
+    .label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8d98a8}.value{font-size:25px;font-weight:800;margin-top:6px}
+    .wide{grid-column:1/-1}
+    button{width:100%;background:#f5f7fa;color:#0b0d10;border:0;border-radius:14px;padding:14px 16px;font-weight:800;font-size:16px;margin:14px 0}
+    table{width:100%;border-collapse:collapse;margin-top:8px}th,td{text-align:left;padding:11px 6px;border-bottom:1px solid #262e3b;font-size:13px}th{color:#8d98a8;font-weight:600}
+    .positive{color:#54d38a}.negative{color:#ff7474}.empty{padding:18px 0;color:#8d98a8}.error{color:#ff7474;white-space:pre-wrap}
+    @media(max-width:650px){.grid{grid-template-columns:1fr 1fr}.market-card{grid-column:1/-1}.value{font-size:21px}}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>AI Trader</h1>
-    <p class="muted">Connection test only. This version cannot place trades.</p>
-    <button id="check">Check Alpaca Connection</button>
-    <pre id="out">Not checked yet.</pre>
-  </div>
-  <script>
-    const btn = document.getElementById('check');
-    const out = document.getElementById('out');
-    btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      out.textContent = 'Checking...';
-      try {
-        const r = await fetch('/api/account');
-        const data = await r.json();
-        out.textContent = JSON.stringify(data, null, 2);
-      } catch (e) {
-        out.textContent = 'Connection request failed.';
-      } finally {
-        btn.disabled = false;
+  <main class="wrap">
+    <div class="top">
+      <div>
+        <h1>AI Trader</h1>
+        <div class="muted">Paper trading control center</div>
+      </div>
+      <div class="badge"><span class="dot"></span>PAPER ONLY</div>
+    </div>
+
+    <button id="refresh">Refresh Alpaca Data</button>
+
+    <section class="grid">
+      <div class="card"><div class="label">Portfolio</div><div class="value" id="portfolio">—</div></div>
+      <div class="card"><div class="label">Cash</div><div class="value" id="cash">—</div></div>
+      <div class="card"><div class="label">Buying Power</div><div class="value" id="buying">—</div></div>
+      <div class="card wide market-card">
+        <div class="label">Market</div>
+        <div class="value" id="market">—</div>
+        <div class="muted" id="next"></div>
+      </div>
+      <div class="card wide">
+        <div class="label">Open Positions</div>
+        <div id="positions" class="empty">Loading…</div>
+      </div>
+      <div class="card wide">
+        <div class="label">Safety</div>
+        <p class="muted" style="margin-bottom:0">This build can read your paper account only. A server-side lock rejects a live Alpaca endpoint, and no order-placement endpoint exists yet.</p>
+      </div>
+    </section>
+
+    <p id="error" class="error"></p>
+  </main>
+
+<script>
+  const money = (n) => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n || 0));
+  const pct = (n) => (Number(n || 0) * 100).toFixed(2) + '%';
+
+  async function load() {
+    const btn = document.getElementById('refresh');
+    btn.disabled = true;
+    document.getElementById('error').textContent = '';
+    try {
+      const r = await fetch('/api/status', { cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Request failed');
+
+      document.getElementById('portfolio').textContent = money(d.account.portfolio_value);
+      document.getElementById('cash').textContent = money(d.account.cash);
+      document.getElementById('buying').textContent = money(d.account.buying_power);
+      document.getElementById('market').textContent = d.market.is_open ? 'OPEN' : 'CLOSED';
+      document.getElementById('market').className = 'value ' + (d.market.is_open ? 'positive' : '');
+      document.getElementById('next').textContent = d.market.is_open
+        ? 'Next close: ' + new Date(d.market.next_close).toLocaleString()
+        : 'Next open: ' + new Date(d.market.next_open).toLocaleString();
+
+      const box = document.getElementById('positions');
+      if (!d.positions.length) {
+        box.className = 'empty';
+        box.innerHTML = 'No open paper positions yet.';
+      } else {
+        box.className = '';
+        box.innerHTML = '<table><thead><tr><th>Symbol</th><th>Qty</th><th>Value</th><th>P/L</th></tr></thead><tbody>' +
+          d.positions.map(p => {
+            const cls = p.unrealized_pl >= 0 ? 'positive' : 'negative';
+            return '<tr><td><strong>'+p.symbol+'</strong></td><td>'+p.qty+'</td><td>'+money(p.market_value)+'</td><td class="'+cls+'">'+money(p.unrealized_pl)+' ('+pct(p.unrealized_plpc)+')</td></tr>';
+          }).join('') + '</tbody></table>';
       }
-    });
-  </script>
+    } catch (e) {
+      document.getElementById('error').textContent = e.message || 'Could not load Alpaca data.';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('refresh').addEventListener('click', load);
+  load();
+</script>
 </body>
 </html>
