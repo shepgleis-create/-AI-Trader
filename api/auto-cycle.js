@@ -122,13 +122,42 @@ export default async function handler(req, res) {
       fetch(historyUrl, { headers })
     ]);
 
-    const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw, portfolioHistory] = await Promise.all([
-      accountRes.json(), clockRes.json(), positionsRes.json(), ordersRes.json(), recentOrdersRes.json(), historyRes.json()
+    const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw, historyRaw] = await Promise.all([
+      accountRes.json().catch(() => ({})),
+      clockRes.json().catch(() => ({})),
+      positionsRes.json().catch(() => ([])),
+      ordersRes.json().catch(() => ([])),
+      recentOrdersRes.json().catch(() => ([])),
+      historyRes.json().catch(() => ({}))
     ]);
 
-    if (!accountRes.ok || !clockRes.ok || !positionsRes.ok || !ordersRes.ok || !recentOrdersRes.ok || !historyRes.ok) {
-      return res.status(502).json({ error: 'Alpaca pre-trade checks failed' });
+    const checks = [
+      { name: 'account', response: accountRes, body: account },
+      { name: 'clock', response: clockRes, body: clock },
+      { name: 'positions', response: positionsRes, body: positionsRaw },
+      { name: 'open_orders', response: ordersRes, body: ordersRaw },
+      { name: 'recent_orders', response: recentOrdersRes, body: recentOrdersRaw }
+    ].map(x => ({
+      name: x.name,
+      ok: x.response.ok,
+      status: x.response.status,
+      message: x.response.ok ? null : String(x.body?.message || x.body?.error || x.response.statusText || 'request failed').slice(0,180)
+    }));
+
+    const failed = checks.filter(x => !x.ok);
+    if (failed.length) {
+      const summary = failed.map(x => `${x.name} HTTP ${x.status}${x.message ? ': ' + x.message : ''}`).join(' · ');
+      return res.status(502).json({
+        error: `Alpaca core check failed — ${summary}`,
+        checks
+      });
     }
+
+    const historyAvailable = historyRes.ok;
+    const historyWarning = historyAvailable
+      ? null
+      : `portfolio_history HTTP ${historyRes.status}: ${String(historyRaw?.message || historyRaw?.error || historyRes.statusText || 'request failed').slice(0,180)}`;
+    const portfolioHistory = historyAvailable ? historyRaw : {};
 
     const positions = Array.isArray(positionsRaw) ? positionsRaw : [];
     const openOrders = Array.isArray(ordersRaw) ? ordersRaw : [];
@@ -141,6 +170,8 @@ export default async function handler(req, res) {
       recentOrders,
       portfolioHistory
     });
+    accountRisk.history_available = historyAvailable;
+    accountRisk.data_warnings = historyWarning ? [historyWarning] : [];
     const entryWindow = marketEntryWindow(clock);
 
     const today = new Date().toISOString().slice(0,10);
@@ -346,6 +377,27 @@ export default async function handler(req, res) {
         enabled,
         market_phase: entryWindow.phase,
         portfolio_risk: portfolioRisk,
+        actions
+      });
+    }
+
+    if (enabled && !historyAvailable) {
+      logTraderEvent('entry_lock', {
+        reason: 'history_unavailable',
+        warning: historyWarning,
+        enabled
+      });
+      actions.push({
+        type: 'entry_lock',
+        reason: 'Account history unavailable; automatic execution fails closed',
+        warning: historyWarning
+      });
+      return res.status(200).json({
+        ok: true,
+        mode: 'PAPER',
+        enabled,
+        portfolio_risk: portfolioRisk,
+        account_risk: accountRisk,
         actions
       });
     }
