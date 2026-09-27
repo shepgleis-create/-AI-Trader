@@ -4,6 +4,12 @@ Autonomous **paper-trading** research system using Alpaca market/trading APIs, G
 
 ## What it does now
 
+### Dashboard security
+- Public static shell, but API/data/trade endpoints require a signed session.
+- Login reuses the existing `CRON_SECRET`; no additional Vercel secret is required.
+- Session cookie is HttpOnly, Secure, SameSite=Strict, and expires after 7 days.
+- Scheduled cron execution remains protected with the Bearer `CRON_SECRET`.
+
 ### Market coverage
 - Pulls Alpaca's active tradable U.S. equity universe dynamically.
 - Considers major U.S. exchange listings instead of a hard-coded ticker list.
@@ -24,6 +30,7 @@ Candidate scoring includes:
 - 20-day relative strength versus SPY
 - average dollar liquidity
 - SPY market-regime adjustment
+- broad sector ETF leadership / laggards
 
 ### Market regime
 SPY is used to classify the environment as:
@@ -109,6 +116,15 @@ Each cycle:
 
 Automatic execution remains disabled while:
 `AUTO_TRADING_ENABLED=false`
+
+### Actual paper performance
+The dashboard also reads Alpaca's real paper portfolio history and compares the account against SPY over the latest month:
+- paper-account return
+- SPY return
+- excess return
+- P/L dollars
+- max drawdown
+- Sharpe ratio
 
 ### Research backtest
 The dashboard includes a walk-forward research test with:
