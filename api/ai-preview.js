@@ -4,6 +4,7 @@ import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
 import { evaluateEntry, entryThresholdForRegime, maxPortfolioCorrelation } from '../lib/risk.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
+import { candidateReadiness } from '../lib/readiness.js';
 
 export default async function handler(req, res) {
   if (!requireDashboardAuth(req, res)) return;
@@ -87,6 +88,11 @@ export default async function handler(req, res) {
     const threshold = entryThresholdForRegime(scan.regime?.label);
     const eligible = scan.candidates.filter(c => c.score >= Math.max(68, threshold - 10)).slice(0, 5);
     const candidateContext = await buildCandidateContext(eligible, alpacaKey, alpacaSecret);
+    const shadowReview = eligible.map(c => ({
+      symbol: c.symbol,
+      scanner_score: c.score,
+      readiness: candidateReadiness(c, scan.regime, candidateContext[c.symbol])
+    }));
 
     if (!eligible.length) {
       return res.status(200).json({
@@ -211,6 +217,7 @@ export default async function handler(req, res) {
       regime: scan.regime,
       decision,
       risk,
+      shadow_review: shadowReview,
       candidates: eligible.map(c => ({
         symbol: c.symbol,
         score: c.score,
@@ -219,7 +226,8 @@ export default async function handler(req, res) {
         event_risk: candidateContext[c.symbol]?.risk?.level || 'LOW',
         beta_60d: c.beta_60d,
         sector_proxy: c.sector_proxy,
-        gap_pct: c.gap_pct
+        gap_pct: c.gap_pct,
+        readiness: candidateReadiness(c, scan.regime, candidateContext[c.symbol])
       }))
     });
   } catch (error) {
