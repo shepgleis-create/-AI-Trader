@@ -41,7 +41,7 @@ function marketEntryWindow(clock) {
   return { allowed: true, phase: 'NORMAL', reason: null };
 }
 
-async function latestPrice(symbol, key, secret) {
+async function latestExecutionSnapshot(symbol, key, secret) {
   const url = new URL('https://data.alpaca.markets/v2/stocks/snapshots');
   url.searchParams.set('symbols', symbol);
   url.searchParams.set('feed', 'iex');
@@ -53,13 +53,26 @@ async function latestPrice(symbol, key, secret) {
   });
   const data = await r.json();
   if (!r.ok) return null;
+
   const s = data?.snapshots?.[symbol] || data?.[symbol];
-  return Number(
-    s?.latestTrade?.p ||
-    s?.minuteBar?.c ||
-    s?.dailyBar?.c ||
-    0
-  ) || null;
+  if (!s) return null;
+
+  const quote = s?.latestQuote || s?.latest_quote;
+  const trade = s?.latestTrade || s?.latest_trade;
+  const minute = s?.minuteBar || s?.minute_bar;
+  const daily = s?.dailyBar || s?.daily_bar;
+
+  const price = Number(trade?.p || minute?.c || daily?.c || 0) || null;
+  const bid = Number(quote?.bp || 0);
+  const ask = Number(quote?.ap || 0);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+  const spreadPct = mid > 0 && ask >= bid ? (ask - bid) / mid : null;
+  const timestamp = quote?.t || trade?.t || minute?.t || daily?.t || null;
+  const ageSeconds = timestamp
+    ? Math.max(0, (Date.now() - new Date(timestamp).getTime()) / 1000)
+    : null;
+
+  return { price, bid, ask, spread_pct: spreadPct, age_seconds: ageSeconds, timestamp };
 }
 
 export default async function handler(req, res) {
@@ -408,7 +421,27 @@ export default async function handler(req, res) {
       });
     }
 
-    const px = await latestPrice(pick.symbol, key, secret) || Number(pick.price);
+    const execution = await latestExecutionSnapshot(pick.symbol, key, secret);
+    if (!execution?.price) {
+      actions.push({ type: 'risk_reject', reason: 'Could not obtain a fresh execution snapshot' });
+      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
+    }
+    if (execution.spread_pct == null || execution.spread_pct > 0.005) {
+      const reason = execution.spread_pct == null
+        ? 'No valid bid/ask quote for final execution check'
+        : 'Final bid/ask spread exceeded 0.50%';
+      logTraderEvent('risk_reject', { symbol: pick.symbol, reason, execution, enabled });
+      actions.push({ type: 'risk_reject', symbol: pick.symbol, reason, execution });
+      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
+    }
+    if (execution.age_seconds != null && execution.age_seconds > 300) {
+      const reason = 'Final execution quote is older than 5 minutes';
+      logTraderEvent('risk_reject', { symbol: pick.symbol, reason, execution, enabled });
+      actions.push({ type: 'risk_reject', symbol: pick.symbol, reason, execution });
+      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
+    }
+
+    const px = execution.ask > 0 ? execution.ask : execution.price;
     const sizing = risk.sizing;
     const qty = px > 0 ? Number((sizing.notional / px).toFixed(8)) : 0;
 
@@ -430,6 +463,8 @@ export default async function handler(req, res) {
       notional: sizing.notional,
       qty,
       reference_price: px,
+      execution_spread_pct: execution.spread_pct,
+      execution_quote_age_seconds: execution.age_seconds,
       stop_price: Number(stopPrice),
       take_profit_price: Number(takeProfitPrice),
       client_order_id: clientId
