@@ -133,7 +133,7 @@ New autonomous paper entries are submitted as price-capped Alpaca limit bracket 
 This is important because Vercel Hobby scheduling is not suitable for second-by-second risk management.
 
 ### Automation
-On Vercel Pro, one weekday cron now checks the autonomous cycle every 15 minutes from 13:00–21:59 UTC. The endpoint exits immediately when Alpaca reports the market closed, which covers both U.S. daylight-saving and standard-time market hours without maintaining two seasonal schedules.
+On Vercel Pro, one weekday cron checks the autonomous cycle every 15 minutes from 13:00–21:59 UTC. A second weekday cron runs the Decision Memory outcome grader after the U.S. close. The endpoint exits immediately when Alpaca reports the market closed, which covers both U.S. daylight-saving and standard-time market hours without maintaining two seasonal schedules.
 
 Each cycle:
 1. checks Alpaca account / market state
@@ -242,6 +242,37 @@ Closed autonomous paper trades are grouped by:
 
 The system does not automatically retune thresholds from tiny samples. Research adaptation remains locked until at least 20 comparable closed trades are available.
 
+### Decision Memory
+The strategy now has a Postgres-ready persistent research-memory layer.
+
+When a database connection is configured, it stores:
+- autonomous and manual decision cycles
+- BUY / SKIP decisions
+- scanner candidates and compact feature snapshots
+- readiness scores
+- event context
+- hard-risk results
+- intraday veto results
+- execution metadata
+- the final stage where each decision ended
+
+A weekday post-market outcome worker revisits stored candidates and records their 1-, 3-, and 5-trading-day returns. This allows skipped and vetoed candidates to be evaluated instead of only studying executed trades.
+
+Decision Memory storage is best-effort and never bypasses or blocks the trading safety engine. If no supported Postgres connection variable exists, memory writes are skipped safely while the rest of the paper system continues.
+
+The dashboard includes filter attribution for:
+- decision stages
+- deterministic hard-risk veto reasons
+- intraday veto reasons
+- selected versus skipped candidates
+- readiness / event-risk segments
+
+Supported database connection environment variables:
+- `DATABASE_URL`
+- `POSTGRES_URL`
+- `POSTGRES_PRISMA_URL`
+- `NEON_DATABASE_URL`
+
 ### Execution journal
 Alpaca order history is used as the durable execution journal.
 
@@ -254,7 +285,7 @@ Autonomous order IDs encode:
 
 The dashboard also shows whether an order has broker-side protection legs and, for new autonomous orders, estimated entry slippage versus the pre-order quote.
 
-Skipped decisions are not yet durably persisted because the project currently has no database.
+Skipped decisions and candidate snapshots are now wired for durable persistence through Decision Memory once a Postgres database is connected.
 
 ## Required Vercel environment variables
 
@@ -264,6 +295,7 @@ Skipped decisions are not yet durably persisted because the project currently ha
 - `GEMINI_API_KEY`
 - `CRON_SECRET`
 - `AUTO_TRADING_ENABLED=false` during calibration
+- one supported Postgres connection variable if Decision Memory persistence is enabled
 
 The application no longer requires `OPENAI_API_KEY`.
 
