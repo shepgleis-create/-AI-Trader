@@ -1,5 +1,6 @@
 import { requireDashboardAuth } from '../lib/auth.js';
 import { getPortfolioRisk } from '../lib/risk.js';
+import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
 export default async function handler(req, res) {
   if (!requireDashboardAuth(req, res)) return;
@@ -27,22 +28,27 @@ export default async function handler(req, res) {
   };
 
   try {
-    const [accountRes, clockRes, positionsRes, ordersRes] = await Promise.all([
+    const [accountRes, clockPack, positionsRes, ordersRes] = await Promise.all([
       fetch(`${baseUrl}/v2/account`, { headers }),
-      fetch(`${baseUrl}/v2/clock`, { headers }),
+      fetchMarketClock(baseUrl, headers),
       fetch(`${baseUrl}/v2/positions`, { headers }),
       fetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers })
     ]);
 
-    const [account, clock, positions, orders] = await Promise.all([
-      accountRes.json(),
-      clockRes.json(),
-      positionsRes.json(),
-      ordersRes.json()
+    const [account, positions, orders] = await Promise.all([
+      accountRes.json().catch(()=>({})),
+      positionsRes.json().catch(()=>([])),
+      ordersRes.json().catch(()=>([]))
     ]);
+    const clock=clockPack.data||{};
 
-    if (!accountRes.ok || !clockRes.ok || !positionsRes.ok || !ordersRes.ok) {
-      return res.status(502).json({ error: 'Alpaca request failed' });
+    const failures=[];
+    if(!accountRes.ok)failures.push(`account HTTP ${accountRes.status}`);
+    if(!clockPack.ok)failures.push(`clock ${clockPack.error||'failed'}`);
+    if(!positionsRes.ok)failures.push(`positions HTTP ${positionsRes.status}`);
+    if(!ordersRes.ok)failures.push(`open orders HTTP ${ordersRes.status}`);
+    if(failures.length){
+      return res.status(502).json({ error:`Alpaca status dependency failed — ${failures.join(' · ')}` });
     }
 
     const positionRows = Array.isArray(positions) ? positions : [];
@@ -72,7 +78,8 @@ export default async function handler(req, res) {
         is_open: Boolean(clock.is_open),
         timestamp: clock.timestamp,
         next_open: clock.next_open,
-        next_close: clock.next_close
+        next_close: clock.next_close,
+        clock_source: clockPack.source||null
       },
       positions: positionRows.map((p) => ({
         symbol: p.symbol,
