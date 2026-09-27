@@ -1,271 +1,260 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>AI Trader</title>
-  <style>
-    :root{color-scheme:dark}
-    *{box-sizing:border-box}
-    body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#090b0f;color:#f5f7fa;margin:0;padding:18px}
-    .wrap{max-width:880px;margin:24px auto}
-    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}
-    h1{margin:0;font-size:30px;letter-spacing:-.7px}
-    .muted{color:#929cab}.badge{display:inline-flex;align-items:center;gap:7px;border:1px solid #2b3442;background:#141923;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800}
-    .dot{width:8px;height:8px;border-radius:50%;background:#f5b942}
-    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-    .card{background:#131821;border:1px solid #262e3b;border-radius:18px;padding:18px}
-    .label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8d98a8}.value{font-size:25px;font-weight:800;margin-top:6px}
-    .wide{grid-column:1/-1}
-    button{width:100%;background:#f5f7fa;color:#0b0d10;border:0;border-radius:14px;padding:14px 16px;font-weight:800;font-size:16px;margin:14px 0}
-    table{width:100%;border-collapse:collapse;margin-top:8px}th,td{text-align:left;padding:11px 6px;border-bottom:1px solid #262e3b;font-size:13px}th{color:#8d98a8;font-weight:600}
-    .positive{color:#54d38a}.negative{color:#ff7474}.empty{padding:18px 0;color:#8d98a8}.error{color:#ff7474;white-space:pre-wrap}
-    @media(max-width:650px){.grid{grid-template-columns:1fr 1fr}.market-card{grid-column:1/-1}.value{font-size:21px}}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>AI Trader</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#080a0e;color:#f5f7fa;margin:0;padding:16px}
+.wrap{max-width:980px;margin:18px auto 60px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:16px}
+h1{margin:0;font-size:30px;letter-spacing:-.8px}.sub{color:#8f99a8;margin-top:3px}
+.badge{display:inline-flex;align-items:center;gap:7px;border:1px solid #2a3340;background:#141922;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800}
+.dot{width:8px;height:8px;border-radius:50%;background:#f4b942}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.card{background:#121720;border:1px solid #252d39;border-radius:18px;padding:17px}
+.wide{grid-column:1/-1}.span2{grid-column:span 2}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:#8b96a6}
+.value{font-size:23px;font-weight:800;margin-top:6px;letter-spacing:-.3px}
+.muted{color:#929cab}.tiny{font-size:12px}.positive{color:#57d58e}.negative{color:#ff7777}.warning{color:#f4c45e}
+button{width:100%;background:#f5f7fa;color:#0b0d10;border:0;border-radius:14px;padding:14px 16px;font-weight:800;font-size:15px;margin:13px 0}
+button:disabled{opacity:.48}.empty{padding:16px 0;color:#8d98a8}.error{color:#ff7777;white-space:pre-wrap}
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;min-width:650px;margin-top:8px}
+th,td{text-align:left;padding:10px 7px;border-bottom:1px solid #252d39;font-size:13px;white-space:nowrap}
+th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #323c4b;border-radius:999px;padding:3px 7px;font-size:11px}
+.kv{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid #252d39}.kv:last-child{border-bottom:0}
+@media(max-width:680px){
+ body{padding:12px}.wrap{margin-top:12px}.grid{grid-template-columns:1fr 1fr}.span2{grid-column:1/-1}
+ .wide{grid-column:1/-1}.value{font-size:20px}.card{padding:15px}
+}
+</style>
 </head>
 <body>
-  <main class="wrap">
-    <div class="top">
-      <div>
-        <h1>AI Trader</h1>
-        <div class="muted">Paper trading control center</div>
-      </div>
-      <div class="badge"><span class="dot"></span>PAPER ONLY</div>
+<main class="wrap">
+  <div class="top">
+    <div><h1>AI Trader</h1><div class="sub">Autonomous paper-trading research system</div></div>
+    <div class="badge"><span class="dot"></span>PAPER ONLY</div>
+  </div>
+
+  <button id="refresh">Refresh System</button>
+
+  <section class="grid">
+    <div class="card"><div class="label">Portfolio</div><div class="value" id="portfolio">—</div></div>
+    <div class="card"><div class="label">Cash</div><div class="value" id="cash">—</div></div>
+    <div class="card"><div class="label">Day P/L</div><div class="value" id="daypl">—</div></div>
+    <div class="card"><div class="label">Exposure</div><div class="value" id="exposure">—</div></div>
+    <div class="card"><div class="label">Market</div><div class="value" id="market">—</div><div class="muted tiny" id="next"></div></div>
+    <div class="card"><div class="label">Automation</div><div class="value" id="automation">—</div><div class="muted tiny" id="brain"></div></div>
+
+    <div class="card wide">
+      <div class="label">Risk Control</div>
+      <div id="riskstatus" class="empty">Loading…</div>
     </div>
 
-    <button id="refresh">Refresh Alpaca Data</button>
+    <div class="card wide">
+      <div class="label">Open Positions</div>
+      <div id="positions" class="empty">Loading…</div>
+    </div>
 
-    <section class="grid">
-      <div class="card"><div class="label">Portfolio</div><div class="value" id="portfolio">—</div></div>
-      <div class="card"><div class="label">Cash</div><div class="value" id="cash">—</div></div>
-      <div class="card"><div class="label">Buying Power</div><div class="value" id="buying">—</div></div>
-      <div class="card wide market-card">
-        <div class="label">Market</div>
-        <div class="value" id="market">—</div>
-        <div class="muted" id="next"></div>
-      </div>
-      <div class="card wide">
-        <div class="label">Open Positions</div>
-        <div id="positions" class="empty">Loading…</div>
-      </div>
-      <div class="card wide">
-        <div class="label">Market Scanner</div>
-        <p class="muted">Scans the active tradable U.S. equity market, filters for liquid/actionable names, then deeply scores the strongest candidates using trend, momentum, RSI and volume.</p>
-        <button id="scan">Run Market Scan</button>
-        <div id="scanout" class="empty">No scan run yet.</div>
-      </div>
-      <div class="card wide">
-        <div class="label">Decision Engine</div>
-        <p class="muted">Uses Gemini 3.8 Flash when available. If Gemini is unavailable, it automatically falls back to the quantitative strategy instead of stopping the trader.</p>
-        <button id="aianalyze">Run Decision Analysis</button>
-        <div id="aiout" class="empty">No decision analysis run yet.</div>
-      </div>
-      <div class="card wide">
-        <div class="label">Paper Execution Test</div>
-        <p class="muted">After a scan, a top candidate scoring 78+ can be submitted as a tiny paper-market order. Hard limit: $25 max, 3 positions max, cash only, no shorts, no live endpoint.</p>
-        <button id="paperbuy" disabled>Run a scan first</button>
-        <div id="paperresult" class="muted"></div>
-      </div>
-      <div class="card wide">
-        <div class="label">Automation</div>
-        <div class="value" style="font-size:20px">Autonomous agent · OFF by default</div>
-        <p class="muted">When enabled, the scheduled cycle scans the market, uses Gemini when available or the quant fallback when it is not, applies the hard risk gate, and can submit the paper order automatically. It also manages −3% stop exits and +6% profit exits.</p>
-      </div>
-      <div class="card wide">
-        <div class="label">Recent Paper Orders</div>
-        <div id="history" class="empty">Loading…</div>
-      </div>
-      <div class="card wide">
-        <div class="label">Safety</div>
-        <p class="muted" style="margin-bottom:0">This build is hard-locked to Alpaca paper trading. Automatic execution remains disabled unless AUTO_TRADING_ENABLED is explicitly set to true in Vercel.</p>
-      </div>
-    </section>
+    <div class="card wide">
+      <div class="label">Full U.S. Market Scanner</div>
+      <p class="muted">Every active tradable major-exchange U.S. equity is eligible. The engine filters by liquidity/activity, then deeply scores the best candidates using trend, momentum, RSI, ATR, volatility, relative strength versus SPY, and volume.</p>
+      <button id="scan">Run Market Scan</button>
+      <div id="scanout" class="empty">No scan run yet.</div>
+    </div>
 
-    <p id="error" class="error"></p>
-  </main>
+    <div class="card wide">
+      <div class="label">Gemini Decision + Hard Risk Gate</div>
+      <p class="muted">Gemini reviews the market-wide shortlist plus regime, headlines, corporate events, portfolio state, and risk. Gemini can say BUY, but the deterministic risk engine can still veto it.</p>
+      <button id="aianalyze">Run Decision Analysis</button>
+      <div id="aiout" class="empty">No decision analysis run yet.</div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Research Backtest</div>
+      <p class="muted">Walk-forward daily-bar simulation with slippage, max 3 positions, ATR-based stops/targets, regime-adjusted thresholds, and SPY comparison. This is research—not a promise of future returns.</p>
+      <button id="backtest">Run Research Backtest</button>
+      <div id="backtestout" class="empty">No backtest run yet.</div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Paper Execution Test</div>
+      <p class="muted">During market hours, the top qualifying scanner candidate can be submitted as a tiny bracket-protected paper order. Calibration cap remains $25 until the execution path is proven.</p>
+      <button id="paperbuy" disabled>Run a market scan first</button>
+      <div id="paperresult" class="muted"></div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Execution Journal</div>
+      <div id="history" class="empty">Loading…</div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Current Safety Policy</div>
+      <div class="kv"><span class="muted">Environment</span><strong>Alpaca paper only</strong></div>
+      <div class="kv"><span class="muted">Daily loss kill switch</span><strong>−2%</strong></div>
+      <div class="kv"><span class="muted">Max gross exposure</span><strong>30%</strong></div>
+      <div class="kv"><span class="muted">Max positions</span><strong>3</strong></div>
+      <div class="kv"><span class="muted">Calibration entry cap</span><strong>$25</strong></div>
+      <div class="kv"><span class="muted">New-entry protection</span><strong>Broker-side bracket stop + target</strong></div>
+    </div>
+  </section>
+  <p id="error" class="error"></p>
+</main>
 
 <script>
-  const money = (n) => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n || 0));
-  const pct = (n) => (Number(n || 0) * 100).toFixed(2) + '%';
-  let topCandidate = null;
-  let marketIsOpen = false;
+const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n||0));
+const pct=n=>(Number(n||0)*100).toFixed(2)+'%';
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+let topCandidate=null;
+let marketIsOpen=false;
+let lastRegime=null;
 
-  async function load() {
-    const btn = document.getElementById('refresh');
-    btn.disabled = true;
-    document.getElementById('error').textContent = '';
-    try {
-      const r = await fetch('/api/status', { cache: 'no-store' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Request failed');
+async function load(){
+  const btn=document.getElementById('refresh'); btn.disabled=true;
+  document.getElementById('error').textContent='';
+  try{
+    const r=await fetch('/api/status',{cache:'no-store'}); const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Status request failed');
+    document.getElementById('portfolio').textContent=money(d.account.portfolio_value);
+    document.getElementById('cash').textContent=money(d.account.cash);
+    const day=d.risk?.day_return||0;
+    const dayEl=document.getElementById('daypl'); dayEl.textContent=pct(day); dayEl.className='value '+(day>=0?'positive':'negative');
+    document.getElementById('exposure').textContent=pct(d.risk?.exposure_pct||0);
+    marketIsOpen=Boolean(d.market.is_open);
+    const marketEl=document.getElementById('market'); marketEl.textContent=marketIsOpen?'OPEN':'CLOSED'; marketEl.className='value '+(marketIsOpen?'positive':'');
+    document.getElementById('next').textContent=marketIsOpen?'Next close: '+new Date(d.market.next_close).toLocaleString():'Next open: '+new Date(d.market.next_open).toLocaleString();
+    document.getElementById('automation').textContent=d.automation_enabled?'ON':'OFF';
+    document.getElementById('automation').className='value '+(d.automation_enabled?'positive':'warning');
+    document.getElementById('brain').textContent=d.gemini_configured?'Gemini configured':'Gemini key missing';
 
-      document.getElementById('portfolio').textContent = money(d.account.portfolio_value);
-      document.getElementById('cash').textContent = money(d.account.cash);
-      document.getElementById('buying').textContent = money(d.account.buying_power);
-      marketIsOpen = Boolean(d.market.is_open);
-      document.getElementById('market').textContent = d.market.is_open ? 'OPEN' : 'CLOSED';
-      updatePaperButton();
-      document.getElementById('market').className = 'value ' + (d.market.is_open ? 'positive' : '');
-      document.getElementById('next').textContent = d.market.is_open
-        ? 'Next close: ' + new Date(d.market.next_close).toLocaleString()
-        : 'Next open: ' + new Date(d.market.next_open).toLocaleString();
+    const locks=[];
+    if(d.risk?.daily_loss_lock) locks.push('DAILY LOSS LOCK');
+    if(d.risk?.exposure_lock) locks.push('EXPOSURE LOCK');
+    if(d.risk?.position_lock) locks.push('POSITION LIMIT');
+    document.getElementById('riskstatus').innerHTML=locks.length
+      ? '<span class="negative"><strong>'+locks.join(' · ')+'</strong></span>'
+      : '<span class="positive"><strong>ENTRY RISK GATES CLEAR</strong></span><div class="muted tiny" style="margin-top:6px">Gross exposure '+pct(d.risk?.exposure_pct||0)+' · Day return '+pct(d.risk?.day_return||0)+'</div>';
 
-      const box = document.getElementById('positions');
-      if (!d.positions.length) {
-        box.className = 'empty';
-        box.innerHTML = 'No open paper positions yet.';
-      } else {
-        box.className = '';
-        box.innerHTML = '<table><thead><tr><th>Symbol</th><th>Qty</th><th>Value</th><th>P/L</th></tr></thead><tbody>' +
-          d.positions.map(p => {
-            const cls = p.unrealized_pl >= 0 ? 'positive' : 'negative';
-            return '<tr><td><strong>'+p.symbol+'</strong></td><td>'+p.qty+'</td><td>'+money(p.market_value)+'</td><td class="'+cls+'">'+money(p.unrealized_pl)+' ('+pct(p.unrealized_plpc)+')</td></tr>';
-          }).join('') + '</tbody></table>';
-      }
-    } catch (e) {
-      document.getElementById('error').textContent = e.message || 'Could not load Alpaca data.';
-    } finally {
-      btn.disabled = false;
+    const box=document.getElementById('positions');
+    if(!d.positions.length){box.className='empty';box.textContent='No open paper positions yet.'}
+    else{
+      box.className='';box.innerHTML='<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Qty</th><th>Value</th><th>P/L</th><th>Protection</th></tr></thead><tbody>'+
+      d.positions.map(p=>'<tr><td><strong>'+esc(p.symbol)+'</strong></td><td>'+p.qty+'</td><td>'+money(p.market_value)+'</td><td class="'+(p.unrealized_pl>=0?'positive':'negative')+'">'+money(p.unrealized_pl)+' ('+pct(p.unrealized_plpc)+')</td><td>'+(p.broker_protected?'<span class="positive">BRACKET</span>':'<span class="warning">LEGACY</span>')+'</td></tr>').join('')+
+      '</tbody></table></div>';
     }
-  }
+    updatePaperButton();
+  }catch(e){document.getElementById('error').textContent=e.message||'Could not load system.'}
+  finally{btn.disabled=false}
+}
 
-  async function runScan() {
-    const btn = document.getElementById('scan');
-    const box = document.getElementById('scanout');
-    btn.disabled = true;
-    box.className = 'empty';
-    box.textContent = 'Scanning market data…';
-    try {
-      const r = await fetch('/api/scan', { cache: 'no-store' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Scan failed');
+async function runScan(){
+  const btn=document.getElementById('scan'),box=document.getElementById('scanout');
+  btn.disabled=true;box.className='empty';box.textContent='Scanning the U.S. equity market…';
+  try{
+    const r=await fetch('/api/scan',{cache:'no-store'});const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Scan failed');
+    lastRegime=d.regime||null;
+    topCandidate=d.candidates?.[0]||null;updatePaperButton();
+    if(!topCandidate){box.textContent='No candidates returned.';return}
+    box.className='';
+    box.innerHTML='<div class="muted" style="margin-top:8px">Universe: <strong>'+d.universe_size+'</strong> · snapshots: '+(d.snapshot_count||0)+' · deep scan: '+(d.deep_scan_size||0)+' · analyzed: '+d.analyzed+' · regime: <strong>'+esc(d.regime?.label||'UNKNOWN')+'</strong></div>'+
+    '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Score</th><th>Price</th><th>20D</th><th>vs SPY</th><th>ATR</th><th>RSI</th></tr></thead><tbody>'+
+    d.candidates.map(c=>'<tr><td><strong>'+esc(c.symbol)+'</strong><div class="muted tiny">'+esc(c.setup)+'</div></td><td class="'+(c.score>=82?'positive':c.score<45?'negative':'')+'"><strong>'+c.score+'</strong></td><td>'+money(c.price)+'</td><td class="'+(c.momentum_20d>=0?'positive':'negative')+'">'+pct(c.momentum_20d)+'</td><td class="'+(c.relative_strength_20d>=0?'positive':'negative')+'">'+pct(c.relative_strength_20d)+'</td><td>'+pct(c.atr_pct)+'</td><td>'+Number(c.rsi14||0).toFixed(1)+'</td></tr>').join('')+
+    '</tbody></table></div>';
+  }catch(e){box.className='error';box.textContent=e.message||'Scan failed'}
+  finally{btn.disabled=false}
+}
 
-      if (!d.candidates?.length) {
-        box.textContent = 'No candidates returned.';
-        return;
-      }
+function updatePaperButton(){
+  const btn=document.getElementById('paperbuy');
+  if(!topCandidate){btn.disabled=true;btn.textContent='Run a market scan first';return}
+  const threshold=lastRegime?.label==='RISK_OFF'?90:lastRegime?.label==='NEUTRAL'?84:82;
+  if(topCandidate.score<threshold){btn.disabled=true;btn.textContent='Top score '+topCandidate.score+' — below '+threshold+' regime threshold';return}
+  if(!marketIsOpen){btn.disabled=true;btn.textContent='Market closed — '+topCandidate.symbol+' currently qualifies ('+topCandidate.score+')';return}
+  btn.disabled=false;btn.textContent='Bracket Paper Buy '+topCandidate.symbol+' — max $25';
+}
 
-      topCandidate = d.candidates[0] || null;
-      updatePaperButton();
-      box.className = '';
-      box.innerHTML =
-        '<div class="muted" style="margin-top:10px">Market universe: '+d.universe_size+' · snapshots: '+(d.snapshot_count || 0)+' · deep scan: '+(d.deep_scan_size || 0)+' · fully analyzed: '+d.analyzed+'. Higher scores mean more rules agree; they do not predict guaranteed profit.</div>' +
-        '<table><thead><tr><th>Symbol</th><th>Score</th><th>Price</th><th>20D</th><th>RSI</th></tr></thead><tbody>' +
-        d.candidates.map(c => {
-          const cls = c.score >= 66 ? 'positive' : (c.score < 45 ? 'negative' : '');
-          const mom = (c.momentum_20d * 100).toFixed(1) + '%';
-          const title = (c.reasons || []).join(' • ').replace(/"/g, '&quot;');
-          return '<tr title="'+title+'"><td><strong>'+c.symbol+'</strong><div class="muted">'+c.setup+'</div></td><td class="'+cls+'"><strong>'+c.score+'</strong></td><td>'+money(c.price)+'</td><td class="'+(c.momentum_20d >= 0 ? 'positive' : 'negative')+'">'+mom+'</td><td>'+Number(c.rsi14).toFixed(1)+'</td></tr>';
-        }).join('') +
-        '</tbody></table>';
-    } catch (e) {
-      box.className = 'error';
-      box.textContent = e.message || 'Scan failed.';
-    } finally {
-      btn.disabled = false;
-    }
-  }
+async function paperBuy(){
+  if(!topCandidate)return;
+  const btn=document.getElementById('paperbuy'),out=document.getElementById('paperresult');
+  btn.disabled=true;out.className='muted';out.textContent='Submitting bracket-protected paper order…';
+  try{
+    const r=await fetch('/api/paper-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:topCandidate.symbol,score:topCandidate.score})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||'Paper order failed');
+    out.className='positive';out.textContent=d.message+' Stop '+money(d.stop_price)+' · Target '+money(d.take_profit_price);
+    await load();await loadHistory();
+  }catch(e){out.className='error';out.textContent=e.message||'Paper order failed'}
+  finally{updatePaperButton()}
+}
 
-  function updatePaperButton() {
-    const btn = document.getElementById('paperbuy');
-    if (!topCandidate) {
-      btn.disabled = true;
-      btn.textContent = 'Run a scan first';
-      return;
-    }
-    if (topCandidate.score < 78) {
-      btn.disabled = true;
-      btn.textContent = 'Top score '+topCandidate.score+' — below 78 threshold';
-      return;
-    }
-    if (!marketIsOpen) {
-      btn.disabled = true;
-      btn.textContent = 'Market closed — '+topCandidate.symbol+' qualifies ('+topCandidate.score+')';
-      return;
-    }
-    btn.disabled = false;
-    btn.textContent = 'Paper Buy '+topCandidate.symbol+' — max $25';
-  }
+async function runAiAnalysis(){
+  const btn=document.getElementById('aianalyze'),box=document.getElementById('aiout');
+  btn.disabled=true;box.className='empty';box.textContent='Gemini + risk engine are reviewing the market-wide shortlist…';
+  try{
+    const r=await fetch('/api/ai-preview',{cache:'no-store'});const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Decision analysis failed');
+    const x=d.decision,risk=d.risk||{};
+    box.className=x.action==='BUY'?'positive':'muted';
+    const approved=risk.approved===true;
+    box.innerHTML='<div style="font-size:22px;font-weight:850;margin-top:10px">'+esc(x.action)+(x.symbol?' '+esc(x.symbol):'')+'</div>'+
+      '<div style="margin-top:6px">Model conviction: '+Number(x.confidence||0)+'/100</div>'+
+      '<div class="muted" style="margin-top:8px">'+esc(x.rationale)+'</div>'+
+      '<div class="muted" style="margin-top:10px">Regime: <strong>'+esc(d.regime?.label||'UNKNOWN')+'</strong> · Source: '+esc(d.source||'LLM')+' · '+esc(d.model||'')+'</div>'+
+      '<div style="margin-top:10px" class="'+(approved?'positive':'warning')+'"><strong>Risk gate: '+(approved?'APPROVED':'NOT APPROVED')+'</strong></div>'+
+      (risk.threshold?'<div class="muted tiny" style="margin-top:5px">Required scanner score: '+risk.threshold+'</div>':'')+
+      (risk.sizing?'<div class="muted tiny">Planned calibration size: '+money(risk.sizing.notional)+' · stop '+pct(risk.sizing.stop_pct)+' · target '+pct(risk.sizing.take_profit_pct)+'</div>':'')+
+      (risk.reasons?.length?'<div class="warning tiny" style="margin-top:6px">'+risk.reasons.map(esc).join(' · ')+'</div>':'')+
+      (d.llm_error?'<div class="muted tiny" style="margin-top:6px">Gemini unavailable: '+esc(d.llm_error)+'</div>':'');
+  }catch(e){box.className='error';box.textContent=e.message||'Decision analysis failed'}
+  finally{btn.disabled=false}
+}
 
-  async function paperBuy() {
-    if (!topCandidate) return;
-    const btn = document.getElementById('paperbuy');
-    const out = document.getElementById('paperresult');
-    btn.disabled = true;
-    out.textContent = 'Submitting paper order…';
-    try {
-      const r = await fetch('/api/paper-order', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({symbol: topCandidate.symbol, score: topCandidate.score})
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Paper order failed');
-      out.className = 'positive';
-      out.textContent = d.message + ' Status: ' + d.status;
-      await load();
-    } catch (e) {
-      out.className = 'error';
-      out.textContent = e.message || 'Paper order failed.';
-    } finally {
-      updatePaperButton();
-    }
-  }
+async function runBacktest(){
+  const btn=document.getElementById('backtest'),box=document.getElementById('backtestout');
+  btn.disabled=true;box.className='empty';box.textContent='Running walk-forward research test… this is heavier than a normal scan.';
+  try{
+    const r=await fetch('/api/backtest',{cache:'no-store'});const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Backtest failed');
+    const m=d.metrics;
+    box.className='';
+    box.innerHTML='<div class="grid" style="margin-top:10px">'+
+      '<div class="card"><div class="label">Strategy Return</div><div class="value '+(m.total_return>=0?'positive':'negative')+'">'+pct(m.total_return)+'</div></div>'+
+      '<div class="card"><div class="label">SPY Return</div><div class="value">'+pct(m.spy_return)+'</div></div>'+
+      '<div class="card"><div class="label">Excess vs SPY</div><div class="value '+(m.excess_return_vs_spy>=0?'positive':'negative')+'">'+pct(m.excess_return_vs_spy)+'</div></div>'+
+      '<div class="card"><div class="label">Win Rate</div><div class="value">'+pct(m.win_rate)+'</div></div>'+
+      '<div class="card"><div class="label">Max Drawdown</div><div class="value negative">'+pct(m.max_drawdown)+'</div></div>'+
+      '<div class="card"><div class="label">Sharpe</div><div class="value">'+Number(m.sharpe||0).toFixed(2)+'</div></div>'+
+    '</div>'+
+    '<div class="muted tiny" style="margin-top:12px">'+esc(d.period.start)+' → '+esc(d.period.end)+' · '+m.trades+' trades · profit factor '+Number(m.profit_factor||0).toFixed(2)+' · '+esc(d.warning)+'</div>';
+  }catch(e){box.className='error';box.textContent=e.message||'Backtest failed'}
+  finally{btn.disabled=false}
+}
 
-  async function runAiAnalysis() {
-    const btn = document.getElementById('aianalyze');
-    const box = document.getElementById('aiout');
-    btn.disabled = true;
-    box.className = 'empty';
-    box.textContent = 'Decision engine is reviewing the current shortlist…';
-    try {
-      const r = await fetch('/api/ai-preview', { cache:'no-store' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'AI analysis failed');
-      const x = d.decision;
-      box.className = x.action === 'BUY' ? 'positive' : 'muted';
-      box.innerHTML =
-        '<div style="font-size:20px;font-weight:800;margin-top:10px">'+x.action+(x.symbol ? ' '+x.symbol : '')+'</div>' +
-        '<div style="margin-top:6px">Confidence: '+x.confidence+'/100</div>' +
-        '<div class="muted" style="margin-top:8px">'+x.rationale+'</div>' +
-        '<div class="muted" style="margin-top:8px;font-size:12px">Source: '+(d.source || 'LLM')+' · '+d.model+'</div>' +
-        (d.llm_error ? '<div class="muted" style="margin-top:6px;font-size:12px">Gemini unavailable: '+d.llm_error+'</div>' : '');
-    } catch (e) {
-      box.className = 'error';
-      box.textContent = e.message || 'AI analysis failed.';
-    } finally {
-      btn.disabled = false;
-    }
-  }
+async function loadHistory(){
+  const box=document.getElementById('history');
+  try{
+    const r=await fetch('/api/history',{cache:'no-store'});const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Could not load journal');
+    const orders=(d.orders||[]).slice(0,15);
+    if(!orders.length){box.className='empty';box.textContent='No paper orders yet.';return}
+    box.className='';
+    box.innerHTML='<div class="muted tiny">Autonomous orders: '+(d.summary?.autonomous_orders||0)+' · Gemini: '+(d.summary?.gemini_orders||0)+' · quant fallback: '+(d.summary?.quant_fallback_orders||0)+'</div>'+
+    '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Source</th><th>Score</th><th>Status</th><th>Fill</th><th>Protection</th></tr></thead><tbody>'+
+    orders.map(o=>'<tr><td><strong>'+esc(o.symbol)+'</strong></td><td>'+esc(o.source||'—')+'</td><td>'+(o.scanner_score??'—')+'</td><td>'+esc(o.status)+'</td><td>'+(o.filled_avg_price?money(o.filled_avg_price):'—')+'</td><td>'+(o.protection_legs?.length?'BRACKET':'—')+'</td></tr>').join('')+
+    '</tbody></table></div>';
+  }catch(e){box.className='error';box.textContent=e.message||'Could not load journal'}
+}
 
-  async function loadHistory() {
-    const box = document.getElementById('history');
-    try {
-      const r = await fetch('/api/history', { cache:'no-store' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Could not load history');
-      const orders = (d.orders || []).slice(0, 12);
-      if (!orders.length) {
-        box.className = 'empty';
-        box.textContent = 'No paper orders yet.';
-        return;
-      }
-      box.className = '';
-      box.innerHTML = '<table><thead><tr><th>Symbol</th><th>Side</th><th>Status</th><th>Filled</th></tr></thead><tbody>' +
-        orders.map(o => '<tr><td><strong>'+o.symbol+'</strong></td><td>'+String(o.side || '').toUpperCase()+'</td><td>'+o.status+'</td><td>'+(o.filled_avg_price ? money(o.filled_avg_price) : '—')+'</td></tr>').join('') +
-        '</tbody></table>';
-    } catch (e) {
-      box.className = 'error';
-      box.textContent = e.message || 'Could not load history.';
-    }
-  }
-
-  document.getElementById('refresh').addEventListener('click', async () => { await load(); await loadHistory(); });
-  document.getElementById('scan').addEventListener('click', runScan);
-  document.getElementById('paperbuy').addEventListener('click', paperBuy);
-  document.getElementById('aianalyze').addEventListener('click', runAiAnalysis);
-  load();
-  loadHistory();
+document.getElementById('refresh').addEventListener('click',async()=>{await load();await loadHistory()});
+document.getElementById('scan').addEventListener('click',runScan);
+document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
+document.getElementById('backtest').addEventListener('click',runBacktest);
+document.getElementById('paperbuy').addEventListener('click',paperBuy);
+load();loadHistory();
 </script>
 </body>
 </html>
