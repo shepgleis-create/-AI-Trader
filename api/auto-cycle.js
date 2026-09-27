@@ -14,6 +14,33 @@ function priceRound(n) {
   return Number(n).toFixed(2);
 }
 
+function marketEntryWindow(clock) {
+  const now = new Date(clock?.timestamp || Date.now());
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit'
+  }).formatToParts(now);
+
+  const hour = Number(parts.find(p => p.type === 'hour')?.value || 0);
+  const minute = Number(parts.find(p => p.type === 'minute')?.value || 0);
+  const minutes = hour * 60 + minute;
+  const firstAllowed = 9 * 60 + 45;
+
+  const nextClose = new Date(clock?.next_close || 0).getTime();
+  const minutesToClose = nextClose > 0 ? (nextClose - now.getTime()) / 60000 : null;
+
+  if (minutes < firstAllowed) {
+    return { allowed: false, phase: 'OPENING_NOISE', reason: 'Avoiding the first 15 minutes after the opening bell' };
+  }
+  if (minutesToClose != null && minutesToClose <= 15) {
+    return { allowed: false, phase: 'CLOSING_NOISE', reason: 'Avoiding new entries in the final 15 minutes' };
+  }
+
+  return { allowed: true, phase: 'NORMAL', reason: null };
+}
+
 async function latestPrice(symbol, key, secret) {
   const url = new URL('https://data.alpaca.markets/v2/stocks/snapshots');
   url.searchParams.set('symbols', symbol);
@@ -83,6 +110,7 @@ export default async function handler(req, res) {
     const openOrders = Array.isArray(ordersRaw) ? ordersRaw : [];
     const recentOrders = Array.isArray(recentOrdersRaw) ? recentOrdersRaw : [];
     const portfolioRisk = getPortfolioRisk(account, positions);
+    const entryWindow = marketEntryWindow(clock);
 
     const today = new Date().toISOString().slice(0,10);
     const autonomousParents = recentOrders.filter(o =>
@@ -150,6 +178,23 @@ export default async function handler(req, res) {
           actions.push({ type: 'exit_dry_run', symbol: p.symbol, reason, plpc });
         }
       }
+    }
+
+    if (!entryWindow.allowed) {
+      logTraderEvent('entry_lock', { reason: entryWindow.reason, phase: entryWindow.phase, enabled });
+      actions.push({
+        type: 'entry_lock',
+        reason: entryWindow.reason,
+        phase: entryWindow.phase
+      });
+      return res.status(200).json({
+        ok: true,
+        mode: 'PAPER',
+        enabled,
+        market_phase: entryWindow.phase,
+        portfolio_risk: portfolioRisk,
+        actions
+      });
     }
 
     if (portfolioRisk.daily_loss_lock) {
@@ -426,6 +471,7 @@ export default async function handler(req, res) {
       mode: 'PAPER',
       enabled,
       regime: scan.regime,
+      market_phase: entryWindow.phase,
       portfolio_risk: portfolioRisk,
       rules: {
         regime_entry_threshold: entryThreshold,
