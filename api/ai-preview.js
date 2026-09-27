@@ -5,6 +5,7 @@ import { buildCandidateContext } from '../lib/context.js';
 import { evaluateEntry, entryThresholdForRegime, maxPortfolioCorrelation } from '../lib/risk.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { candidateReadiness } from '../lib/readiness.js';
+import { newDecisionCycleId, saveDecisionMemory } from '../lib/decision-memory.js';
 
 export default async function handler(req, res) {
   if (!requireDashboardAuth(req, res)) return;
@@ -87,25 +88,55 @@ export default async function handler(req, res) {
     const scan = await fetchMarketScan(alpacaKey, alpacaSecret);
     const threshold = entryThresholdForRegime(scan.regime?.label);
     const eligible = scan.candidates.filter(c => c.score >= Math.max(68, threshold - 10)).slice(0, 5);
-    const candidateContext = await buildCandidateContext(eligible, alpacaKey, alpacaSecret);
-    const shadowReview = eligible.map(c => ({
+    const reviewedCandidates = eligible.length ? eligible : scan.candidates.slice(0, 5);
+    const candidateContext = await buildCandidateContext(reviewedCandidates, alpacaKey, alpacaSecret);
+    const shadowReview = reviewedCandidates.map(c => ({
       symbol: c.symbol,
       scanner_score: c.score,
       readiness: candidateReadiness(c, scan.regime, candidateContext[c.symbol])
     }));
+    const readinessBySymbol = Object.fromEntries(
+      shadowReview.map(x => [x.symbol, x.readiness])
+    );
+    const cycleId = newDecisionCycleId('analysis');
 
     if (!eligible.length) {
+      const decision = {
+        action: 'SKIP',
+        symbol: '',
+        confidence: 100,
+        rationale: 'No market-wide scanner candidates met the minimum review threshold.'
+      };
+      const memory = await saveDecisionMemory({
+        cycle_id: cycleId,
+        origin: 'manual_analysis',
+        mode: 'PAPER',
+        execution_enabled: false,
+        source: 'QUANT_FALLBACK',
+        model: 'quant-fallback-v2',
+        decision,
+        stage: 'NO_SETUP',
+        regime: scan.regime,
+        account_risk: accountRisk,
+        portfolio_risk: null,
+        meta: { threshold, history_available: historyAvailable },
+        candidates: reviewedCandidates,
+        candidate_context: candidateContext,
+        readiness_by_symbol: readinessBySymbol
+      });
+
       return res.status(200).json({
         source: 'QUANT_FALLBACK',
         model: 'quant-fallback-v2',
         regime: scan.regime,
-        decision: {
-          action: 'SKIP',
-          symbol: '',
-          confidence: 100,
-          rationale: 'No market-wide scanner candidates met the minimum review threshold.'
-        },
-        candidates: []
+        decision,
+        shadow_review: shadowReview,
+        memory,
+        candidates: reviewedCandidates.map(c => ({
+          symbol: c.symbol,
+          score: c.score,
+          readiness: readinessBySymbol[c.symbol]
+        }))
       });
     }
 
@@ -210,6 +241,25 @@ export default async function handler(req, res) {
       risk.reasons = [...(risk.reasons || []), ...accountRisk.locks];
     }
 
+    const memory = await saveDecisionMemory({
+      cycle_id: cycleId,
+      origin: 'manual_analysis',
+      mode: 'PAPER',
+      execution_enabled: false,
+      source,
+      model: source === 'LLM' ? decision.model : 'quant-fallback-v2',
+      decision,
+      stage: decision.action !== 'BUY' ? 'MODEL_SKIP' : risk.approved ? 'RISK_APPROVED' : 'RISK_REJECTED',
+      regime: scan.regime,
+      account_risk: accountRisk,
+      portfolio_risk: risk.portfolio || null,
+      risk,
+      meta: { threshold, llm_error, history_available: historyAvailable },
+      candidates: eligible,
+      candidate_context: candidateContext,
+      readiness_by_symbol: readinessBySymbol
+    });
+
     return res.status(200).json({
       source,
       model: source === 'LLM' ? decision.model : 'quant-fallback-v2',
@@ -217,6 +267,7 @@ export default async function handler(req, res) {
       regime: scan.regime,
       decision,
       risk,
+      memory,
       shadow_review: shadowReview,
       candidates: eligible.map(c => ({
         symbol: c.symbol,
