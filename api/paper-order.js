@@ -1,3 +1,4 @@
+import { requireDashboardAuth } from '../lib/auth.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 
 async function getAsset(symbol, baseUrl, headers) {
@@ -23,6 +24,7 @@ async function getLatestPrice(symbol, key, secret) {
 }
 
 export default async function handler(req, res) {
+  if (!requireDashboardAuth(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const key = process.env.ALPACA_API_KEY;
