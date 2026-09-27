@@ -292,24 +292,30 @@ export default async function handler(req, res) {
           }).catch(() => null);
         }
 
-        const closeRes = await fetch(`${baseUrl}/v2/positions/${encodeURIComponent(p.symbol)}`, {
-          method: 'DELETE',
-          headers
-        });
-        const closeData = await closeRes.json().catch(() => ({}));
+        let closeRes = null;
+        let closeData = {};
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          if (attempt > 1) await new Promise(resolve => setTimeout(resolve, 700));
+          closeRes = await fetch(`${baseUrl}/v2/positions/${encodeURIComponent(p.symbol)}`, {
+            method: 'DELETE',
+            headers
+          });
+          closeData = await closeRes.json().catch(() => ({}));
+          if (closeRes.ok) break;
+        }
 
         logTraderEvent('end_of_day_flatten', {
           symbol: p.symbol,
-          submitted: closeRes.ok,
+          submitted: Boolean(closeRes?.ok),
           order_id: closeData?.id || null
         });
 
         actions.push({
           type: 'end_of_day_flatten',
           symbol: p.symbol,
-          submitted: closeRes.ok,
+          submitted: Boolean(closeRes?.ok),
           order_id: closeData?.id || null,
-          error: closeRes.ok ? null : closeData?.message || 'Close rejected'
+          error: closeRes?.ok ? null : closeData?.message || 'Close rejected after retries'
         });
       }
     }
