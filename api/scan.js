@@ -20,6 +20,7 @@ export default async function handler(req, res) {
       snapshot_count: scan.snapshot_count,
       deep_scan_size: scan.deep_scan_size,
       analyzed: scan.analyzed,
+      regime: scan.regime,
       note: 'Market-wide U.S. equity scanner. Every active tradable major-exchange equity is eligible; liquidity/activity filters select the deep-analysis set.',
       candidates: scan.candidates.slice(0, 20)
     });
