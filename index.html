@@ -129,6 +129,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Benchmark Lab</div>
+      <p class="muted">Compares AI Trader against passive alternatives over the exact same overlapping daily dates. Includes raw return and risk-adjusted metrics.</p>
+      <button id="benchmarkLab">Run Benchmark Lab</button>
+      <div id="benchmarkLabOut" class="empty">No benchmark comparison loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Intraday Calibration Backtest</div>
       <p class="muted">Closer to the live paper behavior: prior-day signals, entry after 9:45 ET, one trade per day, broker-style stop/target, and forced exit by 3:45 ET.</p>
       <button id="intradaybacktest">Run Intraday Calibration Backtest</button>
@@ -522,6 +529,50 @@ async function loadPerformance(){
   finally{btn.disabled=false}
 }
 
+async function runBenchmarkLab(){
+  const btn=document.getElementById('benchmarkLab'),box=document.getElementById('benchmarkLabOut');
+  btn.disabled=true;box.className='empty';box.textContent='Aligning bot history with passive benchmarks…';
+  try{
+    const r=await apiFetch('/api/benchmark-lab',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Benchmark Lab failed');
+    if(!d.ready){
+      box.className='empty';
+      box.textContent=d.note||'Not enough overlapping history yet.';
+      return;
+    }
+
+    const rows=d.rows||{};
+    const order=['AI_TRADER','SPY','VTI','SIXTY_FORTY'];
+    box.className='';
+    box.innerHTML=
+      '<div class="muted tiny">Exact period: <strong>'+esc(d.period?.start||'')+'</strong> → <strong>'+esc(d.period?.end||'')+'</strong> · '+Number(d.period?.trading_days||0)+' overlapping trading days</div>'+
+      '<div class="tablewrap"><table><thead><tr><th>Strategy</th><th>Return</th><th>$10K →</th><th>Max DD</th><th>Volatility</th><th>Sharpe</th><th>Sortino</th></tr></thead><tbody>'+
+      order.map(key=>{
+        const x=rows[key]||{};
+        return '<tr>'+
+          '<td><strong>'+esc(x.label||key)+'</strong></td>'+
+          '<td class="'+((x.total_return||0)>=0?'positive':'negative')+'">'+pct(x.total_return||0)+'</td>'+
+          '<td>'+money(x.ending_10000||10000)+'</td>'+
+          '<td class="negative">'+pct(x.max_drawdown||0)+'</td>'+
+          '<td>'+pct(x.volatility||0)+'</td>'+
+          '<td>'+Number(x.sharpe||0).toFixed(2)+'</td>'+
+          '<td>'+Number(x.sortino||0).toFixed(2)+'</td>'+
+        '</tr>';
+      }).join('')+
+      '</tbody></table></div>'+
+      '<div class="grid" style="margin-top:12px">'+
+        '<div class="card"><div class="label">Excess vs SPY</div><div class="value '+((d.excess_return?.vs_spy||0)>=0?'positive':'negative')+'">'+pct(d.excess_return?.vs_spy||0)+'</div></div>'+
+        '<div class="card"><div class="label">Excess vs VTI</div><div class="value '+((d.excess_return?.vs_vti||0)>=0?'positive':'negative')+'">'+pct(d.excess_return?.vs_vti||0)+'</div></div>'+
+        '<div class="card"><div class="label">Excess vs 60/40</div><div class="value '+((d.excess_return?.vs_60_40||0)>=0?'positive':'negative')+'">'+pct(d.excess_return?.vs_60_40||0)+'</div></div>'+
+      '</div>'+
+      '<div class="muted tiny" style="margin-top:10px">'+esc(d.methodology?.note||'')+' · 60/40 benchmark: '+esc(d.methodology?.sixty_forty||'')+'</div>';
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Benchmark Lab failed';
+  }finally{btn.disabled=false}
+}
+
 async function runIntradayBacktest(){
   const btn=document.getElementById('intradaybacktest'),box=document.getElementById('intradaybacktestout');
   btn.disabled=true;box.className='empty';box.textContent='Running 15-minute calibration replay…';
@@ -629,6 +680,7 @@ document.getElementById('preflight').addEventListener('click',runPreflight);
 document.getElementById('alpacaDiag').addEventListener('click',runAlpacaDiagnostics);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
 document.getElementById('performance').addEventListener('click',loadPerformance);
+document.getElementById('benchmarkLab').addEventListener('click',runBenchmarkLab);
 document.getElementById('intradaybacktest').addEventListener('click',runIntradayBacktest);
 document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('emergency').addEventListener('click',emergencyClose);
