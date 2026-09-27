@@ -166,8 +166,12 @@ function hideLogin(){
   document.getElementById('loginError').textContent='';
 }
 async function apiFetch(url,opts={}){
-  const r=await fetch(url,{...opts,credentials:'same-origin'});
+  const token=sessionStorage.getItem('ai_trader_session')||'';
+  const headers={...(opts.headers||{})};
+  if(token) headers['x-dashboard-session']=token;
+  const r=await fetch(url,{...opts,headers,credentials:'same-origin'});
   if(r.status===401){
+    sessionStorage.removeItem('ai_trader_session');
     showLogin('Login required.');
     throw new Error('Dashboard login required');
   }
@@ -181,12 +185,16 @@ async function login(){
   try{
     const r=await fetch('/api/login',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{
+        'Content-Type':'application/json',
+        'x-dashboard-secret':secret.trim()
+      },
       credentials:'same-origin',
-      body:JSON.stringify({secret})
+      body:'{}'
     });
     const d=await r.json();
     if(!r.ok) throw new Error(d.error||'Login failed');
+    if(d.session) sessionStorage.setItem('ai_trader_session',d.session);
     document.getElementById('loginSecret').value='';
     hideLogin();
     await Promise.all([load(),loadHistory(),loadPerformance(),runPreflight(),loadStrategyStats()]);
