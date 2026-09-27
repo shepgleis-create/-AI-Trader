@@ -407,9 +407,9 @@ async function loadStrategyStats(){
     if(!r.ok)throw new Error(d.error||'Strategy stats failed');
     const g=d.by_source?.GEMINI||{},q=d.by_source?.QUANT_FALLBACK||{};
     box.className='';
-    box.innerHTML='<div class="tablewrap"><table><thead><tr><th>Source</th><th>Closed</th><th>Win Rate</th><th>P/L</th><th>Avg Return</th><th>Profit Factor</th></tr></thead><tbody>'+
-      '<tr><td><strong>Gemini</strong></td><td>'+Number(g.closed_trades||0)+'</td><td>'+pct(g.win_rate||0)+'</td><td class="'+((g.pnl||0)>=0?'positive':'negative')+'">'+money(g.pnl||0)+'</td><td>'+pct(g.avg_return||0)+'</td><td>'+Number(g.profit_factor||0).toFixed(2)+'</td></tr>'+
-      '<tr><td><strong>Quant fallback</strong></td><td>'+Number(q.closed_trades||0)+'</td><td>'+pct(q.win_rate||0)+'</td><td class="'+((q.pnl||0)>=0?'positive':'negative')+'">'+money(q.pnl||0)+'</td><td>'+pct(q.avg_return||0)+'</td><td>'+Number(q.profit_factor||0).toFixed(2)+'</td></tr>'+
+    box.innerHTML='<div class="tablewrap"><table><thead><tr><th>Source</th><th>Closed</th><th>Win Rate</th><th>P/L</th><th>Avg Return</th><th>Profit Factor</th><th>Avg Entry Slippage</th></tr></thead><tbody>'+
+      '<tr><td><strong>Gemini</strong></td><td>'+Number(g.closed_trades||0)+'</td><td>'+pct(g.win_rate||0)+'</td><td class="'+((g.pnl||0)>=0?'positive':'negative')+'">'+money(g.pnl||0)+'</td><td>'+pct(g.avg_return||0)+'</td><td>'+Number(g.profit_factor||0).toFixed(2)+'</td><td>'+((g.avg_entry_slippage==null)?'—':pct(g.avg_entry_slippage))+'</td></tr>'+
+      '<tr><td><strong>Quant fallback</strong></td><td>'+Number(q.closed_trades||0)+'</td><td>'+pct(q.win_rate||0)+'</td><td class="'+((q.pnl||0)>=0?'positive':'negative')+'">'+money(q.pnl||0)+'</td><td>'+pct(q.avg_return||0)+'</td><td>'+Number(q.profit_factor||0).toFixed(2)+'</td><td>'+((q.avg_entry_slippage==null)?'—':pct(q.avg_entry_slippage))+'</td></tr>'+
       '</tbody></table></div>';
     if(!(d.total?.closed_trades>0)){
       box.innerHTML+='<div class="muted tiny" style="margin-top:8px">No closed autonomous bracket trades yet. This will populate after paper trades open and close.</div>';
@@ -529,8 +529,8 @@ async function loadHistory(){
     if(!orders.length){box.className='empty';box.textContent='No paper orders yet.';return}
     box.className='';
     box.innerHTML='<div class="muted tiny">Autonomous orders: '+(d.summary?.autonomous_orders||0)+' · Gemini: '+(d.summary?.gemini_orders||0)+' · quant fallback: '+(d.summary?.quant_fallback_orders||0)+'</div>'+
-    '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Source</th><th>Score</th><th>Status</th><th>Fill</th><th>Protection</th></tr></thead><tbody>'+
-    orders.map(o=>'<tr><td><strong>'+esc(o.symbol)+'</strong></td><td>'+esc(o.source||'—')+'</td><td>'+(o.scanner_score??'—')+'</td><td>'+esc(o.status)+'</td><td>'+(o.filled_avg_price?money(o.filled_avg_price):'—')+'</td><td>'+(o.protection_legs?.length?'BRACKET':'—')+'</td></tr>').join('')+
+    '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Source</th><th>Score</th><th>Status</th><th>Fill</th><th>Slippage</th><th>Protection</th></tr></thead><tbody>'+
+    orders.map(o=>'<tr><td><strong>'+esc(o.symbol)+'</strong></td><td>'+esc(o.source||'—')+'</td><td>'+(o.scanner_score??'—')+'</td><td>'+esc(o.status)+'</td><td>'+(o.filled_avg_price?money(o.filled_avg_price):'—')+'</td><td>'+((o.entry_slippage_pct==null)?'—':pct(o.entry_slippage_pct))+'</td><td>'+(o.protection_legs?.length?'BRACKET':'—')+'</td></tr>').join('')+
     '</tbody></table></div>';
   }catch(e){box.className='error';box.textContent=e.message||'Could not load journal'}
 }
