@@ -1,4 +1,5 @@
 import { isDashboardAuthorized } from '../lib/auth.js';
+import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
 const STOP=-0.35;
 const TARGET=0.70;
@@ -28,12 +29,12 @@ export default async function handler(req,res){
 
   try{
     const [clockp,pp,rp]=await Promise.all([
-      jf(`${base}/v2/clock`,{headers:h(key,secret)}),
+      fetchMarketClock(base,h(key,secret)),
       jf(`${base}/v2/positions`,{headers:h(key,secret)}),
       jf(`${base}/v2/orders?status=all&limit=500&direction=desc&nested=true`,{headers:h(key,secret)})
     ]);
-    if(!clockp.r.ok||!pp.r.ok||!rp.r.ok)return res.status(502).json({error:'Could not load options risk state'});
-    if(!clockp.d?.is_open)return res.status(200).json({ok:true,mode:'PAPER',market_open:false,actions:[]});
+    if(!clockp.ok||!pp.r.ok||!rp.r.ok)return res.status(502).json({error:!clockp.ok?`Market clock failed — ${clockp.error||'unavailable'}`:'Could not load options risk state'});
+    if(!clockp.data?.is_open)return res.status(200).json({ok:true,mode:'PAPER',market_open:false,clock_source:clockp.source||null,actions:[]});
 
     const positions=Array.isArray(pp.d)?pp.d:[];
     const orders=Array.isArray(rp.d)?rp.d:[];
