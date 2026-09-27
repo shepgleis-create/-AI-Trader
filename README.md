@@ -100,10 +100,7 @@ New autonomous paper entries are submitted as Alpaca bracket orders where suppor
 This is important because Vercel Hobby scheduling is not suitable for second-by-second risk management.
 
 ### Automation
-Three separate weekday cron windows call the autonomous cycle:
-- 15:00 UTC
-- 17:30 UTC
-- 19:00 UTC
+On Vercel Pro, one weekday cron now checks the autonomous cycle every 15 minutes from 13:00–21:59 UTC. The endpoint exits immediately when Alpaca reports the market closed, which covers both U.S. daylight-saving and standard-time market hours without maintaining two seasonal schedules.
 
 Each cycle:
 1. checks Alpaca account / market state
@@ -116,6 +113,8 @@ Each cycle:
 
 Automatic execution remains disabled while:
 `AUTO_TRADING_ENABLED=false`
+
+Vercel functions are configured with a 60-second maximum duration so full-market scans and research endpoints have more room to finish.
 
 ### Actual paper performance
 The dashboard also reads Alpaca's real paper portfolio history and compares the account against SPY over the latest month:
