@@ -76,6 +76,12 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Account Circuit Breakers</div>
+      <p class="muted">Stops new entries after meaningful account-level deterioration even if an individual stock setup still looks attractive.</p>
+      <div id="accountrisk" class="empty">Loading account risk…</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Open Positions</div>
       <div id="positions" class="empty">Loading…</div>
     </div>
@@ -257,6 +263,32 @@ async function load(){
     updatePaperButton();
   }catch(e){document.getElementById('error').textContent=e.message||'Could not load system.'}
   finally{btn.disabled=false}
+}
+
+async function loadAccountRisk(){
+  const box=document.getElementById('accountrisk');
+  try{
+    const r=await apiFetch('/api/risk-report',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Risk report failed');
+
+    const locked=!d.approved;
+    box.className='';
+    box.innerHTML=
+      '<div class="'+(locked?'negative':'positive')+'"><strong>'+(locked?'ACCOUNT RISK LOCKED':'ACCOUNT RISK CLEAR')+'</strong></div>'+
+      (d.locks?.length?'<div class="warning tiny" style="margin-top:6px">'+d.locks.map(esc).join(' · ')+'</div>':'')+
+      '<div class="grid" style="margin-top:10px">'+
+        '<div class="card"><div class="label">30D Drawdown</div><div class="value '+((d.drawdown_pct||0)<=-0.03?'negative':'')+'">'+pct(d.drawdown_pct||0)+'</div><div class="muted tiny">Lock at '+pct(d.limits?.maxDrawdownPct||-0.05)+'</div></div>'+
+        '<div class="card"><div class="label">Trailing Week</div><div class="value '+((d.trailing_week_return||0)<0?'negative':'positive')+'">'+pct(d.trailing_week_return||0)+'</div><div class="muted tiny">Lock at '+pct(d.limits?.weeklyLossPct||-0.04)+'</div></div>'+
+        '<div class="card"><div class="label">Open Risk</div><div class="value">'+pct(d.open_risk_pct||0)+'</div><div class="muted tiny">Budget '+pct(d.limits?.maxOpenRiskPct||0.01)+'</div></div>'+
+        '<div class="card"><div class="label">Loss Streak</div><div class="value">'+Number(d.consecutive_autonomous_losses||0)+'</div><div class="muted tiny">Lock at '+Number(d.limits?.consecutiveLossLimit||3)+'</div></div>'+
+        '<div class="card"><div class="label">Recent High</div><div class="value">'+money(d.high_water_equity||0)+'</div></div>'+
+        '<div class="card"><div class="label">Current Equity</div><div class="value">'+money(d.equity||0)+'</div></div>'+
+      '</div>';
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Account risk report failed';
+  }
 }
 
 async function runScan(){
@@ -503,7 +535,7 @@ async function loadHistory(){
   }catch(e){box.className='error';box.textContent=e.message||'Could not load journal'}
 }
 
-document.getElementById('refresh').addEventListener('click',async()=>{await load();await loadHistory()});
+document.getElementById('refresh').addEventListener('click',async()=>{await Promise.all([load(),loadHistory(),loadAccountRisk()])});
 document.getElementById('scan').addEventListener('click',runScan);
 document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
@@ -515,7 +547,7 @@ document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('emergency').addEventListener('click',emergencyClose);
 document.getElementById('paperbuy').addEventListener('click',paperBuy);
 hideLogin();
-Promise.all([load(),loadHistory(),loadPerformance(),runPreflight(),loadStrategyStats()]).catch(()=>{});
+Promise.all([load(),loadHistory(),loadPerformance(),runPreflight(),loadStrategyStats(),loadAccountRisk()]).catch(()=>{});
 </script>
 </body>
 </html>
