@@ -8,8 +8,11 @@ function sourceFromId(id){
 }
 
 function scoreFromId(id){
-  const m=String(id||'').match(/-s(\d+)-c(\d+)-/);
-  return m?{score:Number(m[1]),confidence:Number(m[2])}:{score:null,confidence:null};
+  const s=String(id||'');
+  const m=s.match(/-s(\d+)-c(\d+)(?:-p(\d+))?-/);
+  return m
+    ? {score:Number(m[1]),confidence:Number(m[2]),reference_price:m[3]?Number(m[3])/100:null}
+    : {score:null,confidence:null,reference_price:null};
 }
 
 function summarize(trades){
@@ -24,7 +27,11 @@ function summarize(trades){
     win_rate:trades.length?wins.length/trades.length:0,
     pnl:trades.reduce((s,t)=>s+t.pnl,0),
     avg_return:trades.length?trades.reduce((s,t)=>s+t.return_pct,0)/trades.length:0,
-    profit_factor:grossLoss>0?grossProfit/grossLoss:(grossProfit>0?99:0)
+    profit_factor:grossLoss>0?grossProfit/grossLoss:(grossProfit>0?99:0),
+    avg_entry_slippage:trades.filter(t=>t.entry_slippage_pct!=null).length
+      ? trades.filter(t=>t.entry_slippage_pct!=null).reduce((s,t)=>s+t.entry_slippage_pct,0) /
+        trades.filter(t=>t.entry_slippage_pct!=null).length
+      : null
   };
 }
 
@@ -74,6 +81,8 @@ export default async function handler(req,res){
         return_pct:entry>0?(exit-entry)/entry:0,
         scanner_score:meta.score,
         model_confidence:meta.confidence,
+        reference_price:meta.reference_price,
+        entry_slippage_pct:meta.reference_price ? entry/meta.reference_price-1 : null,
         entry_time:o.filled_at||o.submitted_at,
         exit_time:filledExit.filled_at||null,
         exit_type:filledExit.type||null
