@@ -50,7 +50,7 @@
       </div>
       <div class="card wide">
         <div class="label">Market Scanner</div>
-        <p class="muted">Scans a starter universe of liquid stocks and ETFs using trend, momentum, RSI and volume signals.</p>
+        <p class="muted">Scans the active tradable U.S. equity market, filters for liquid/actionable names, then deeply scores the strongest candidates using trend, momentum, RSI and volume.</p>
         <button id="scan">Run Market Scan</button>
         <div id="scanout" class="empty">No scan run yet.</div>
       </div>
@@ -149,7 +149,7 @@
       updatePaperButton();
       box.className = '';
       box.innerHTML =
-        '<div class="muted" style="margin-top:10px">Analyzed '+d.analyzed+' of '+d.universe_size+' symbols. Higher scores mean more of the current rules agree; they do not predict guaranteed profit.</div>' +
+        '<div class="muted" style="margin-top:10px">Market universe: '+d.universe_size+' · snapshots: '+(d.snapshot_count || 0)+' · deep scan: '+(d.deep_scan_size || 0)+' · fully analyzed: '+d.analyzed+'. Higher scores mean more rules agree; they do not predict guaranteed profit.</div>' +
         '<table><thead><tr><th>Symbol</th><th>Score</th><th>Price</th><th>20D</th><th>RSI</th></tr></thead><tbody>' +
         d.candidates.map(c => {
           const cls = c.score >= 66 ? 'positive' : (c.score < 45 ? 'negative' : '');
