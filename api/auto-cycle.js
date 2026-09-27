@@ -94,11 +94,13 @@ export default async function handler(req, res) {
     const actions = [];
 
     // Legacy safety net for positions opened before bracket orders were added.
-    const protectedSymbols = new Set(
-      openOrders
-        .filter(o => o.side === 'sell')
-        .map(o => o.symbol)
-    );
+    const protectedSymbols = new Set();
+    for (const o of openOrders) {
+      if (o?.side === 'sell' && o?.symbol) protectedSymbols.add(o.symbol);
+      for (const leg of (Array.isArray(o?.legs) ? o.legs : [])) {
+        if (leg?.side === 'sell') protectedSymbols.add(leg.symbol || o.symbol);
+      }
+    }
 
     for (const p of positions) {
       if (protectedSymbols.has(p.symbol)) continue;
