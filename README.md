@@ -30,6 +30,8 @@ Candidate scoring includes:
 - 20-day relative strength versus SPY
 - average dollar liquidity
 - SPY market-regime adjustment
+- same-day advance/decline breadth
+- multi-day market participation (% above 20-day / 50-day trends and median 20-day momentum)
 - broad sector ETF leadership / laggards
 - inferred sector proxy for each candidate
 - 60-day beta versus SPY
@@ -164,6 +166,51 @@ The dashboard also reads Alpaca's real paper portfolio history and compares the 
 - P/L dollars
 - max drawdown
 - Sharpe ratio
+
+### Benchmark Lab
+The Benchmark Lab compares AI Trader over the exact same overlapping daily dates against:
+- SPY
+- VTI
+- a 60% VTI / 40% BND research benchmark
+
+It reports:
+- total return
+- $10,000-equivalent ending value
+- max drawdown
+- annualized volatility
+- Sharpe
+- Sortino
+- excess return versus each benchmark
+
+When available, the bot return series prefers Alpaca's broker-reported portfolio-history profit/loss percentage series instead of relying only on raw equity changes.
+
+### Research Evidence Gate
+A fixed diagnostic gate prevents moving the research goalposts. It checks:
+- minimum closed autonomous trade sample
+- profit factor
+- excess return versus SPY
+- Sharpe versus SPY
+- maximum drawdown
+- observed entry slippage
+- minimum benchmark-history length
+
+The gate is diagnostic only. It does not enable live-money trading.
+
+### Out-of-sample robustness lab
+A separate research endpoint tests a grid of:
+- regime-threshold offsets
+- ATR stop-distance multipliers
+- reward-to-risk targets
+
+The historical window is split into a training section and a later unseen validation section. Parameters are ranked only on training performance, then their untouched validation results are displayed.
+
+It also reports:
+- percentage of tested configurations profitable in validation
+- percentage beating SPY in validation
+- median validation Sharpe
+- the validation performance of the training-selected configuration
+
+This still uses today's active/liquid universe and does not replay Gemini/news/intraday filters, so it remains a robustness screen rather than proof of future returns.
 
 ### Research backtest
 The dashboard includes a walk-forward research test with:
