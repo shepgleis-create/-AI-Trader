@@ -3,6 +3,7 @@ import { fetchMarketScan, fetchBarsForSymbols } from '../lib/strategy.js';
 import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
 import { evaluateEntry, entryThresholdForRegime, maxPortfolioCorrelation } from '../lib/risk.js';
+import { buildAccountRisk } from '../lib/account-risk.js';
 
 export default async function handler(req, res) {
   if (!requireDashboardAuth(req, res)) return;
@@ -24,17 +25,36 @@ export default async function handler(req, res) {
   };
 
   try {
-    const [accountRes, positionsRes] = await Promise.all([
+    const historyUrl = new URL(`${baseUrl}/v2/account/portfolio/history`);
+    historyUrl.searchParams.set('period','1M');
+    historyUrl.searchParams.set('timeframe','1D');
+
+    const [accountRes, positionsRes, ordersRes, recentOrdersRes, historyRes] = await Promise.all([
       fetch(`${baseUrl}/v2/account`, { headers }),
-      fetch(`${baseUrl}/v2/positions`, { headers })
+      fetch(`${baseUrl}/v2/positions`, { headers }),
+      fetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers }),
+      fetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers }),
+      fetch(historyUrl, { headers })
     ]);
 
-    const [account, positionsRaw] = await Promise.all([accountRes.json(), positionsRes.json()]);
-    if (!accountRes.ok || !positionsRes.ok) {
+    const [account, positionsRaw, ordersRaw, recentOrdersRaw, portfolioHistory] = await Promise.all([
+      accountRes.json(), positionsRes.json(), ordersRes.json(), recentOrdersRes.json(), historyRes.json()
+    ]);
+    if (!accountRes.ok || !positionsRes.ok || !ordersRes.ok || !recentOrdersRes.ok || !historyRes.ok) {
       return res.status(502).json({ error: 'Could not load Alpaca context for AI' });
     }
 
     const positions = Array.isArray(positionsRaw) ? positionsRaw : [];
+    const openOrders = Array.isArray(ordersRaw) ? ordersRaw : [];
+    const recentOrders = Array.isArray(recentOrdersRaw) ? recentOrdersRaw : [];
+    const accountRisk = buildAccountRisk({
+      account,
+      positions,
+      openOrders,
+      recentOrders,
+      portfolioHistory
+    });
+
     const scan = await fetchMarketScan(alpacaKey, alpacaSecret);
     const threshold = entryThresholdForRegime(scan.regime?.label);
     const eligible = scan.candidates.filter(c => c.score >= Math.max(68, threshold - 10)).slice(0, 5);
@@ -128,6 +148,12 @@ export default async function handler(req, res) {
           portfolio: null,
           sizing: null
         };
+
+    risk.account_risk = accountRisk;
+    if (!accountRisk.approved) {
+      risk.approved = false;
+      risk.reasons = [...(risk.reasons || []), ...accountRisk.locks];
+    }
 
     return res.status(200).json({
       source,
