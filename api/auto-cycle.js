@@ -8,6 +8,7 @@ import { buildAccountRisk } from '../lib/account-risk.js';
 import { getIntradayConfirmation } from '../lib/intraday.js';
 import { candidateReadiness } from '../lib/readiness.js';
 import { newDecisionCycleId, saveDecisionMemory } from '../lib/decision-memory.js';
+import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
@@ -132,40 +133,35 @@ export default async function handler(req, res) {
     historyUrl.searchParams.set('period','1M');
     historyUrl.searchParams.set('timeframe','1D');
 
-    const [accountRes, clockRes, positionsRes, ordersRes, recentOrdersRes, historyRes] = await Promise.all([
+    const [accountRes, clockPack, positionsRes, ordersRes, recentOrdersRes, historyRes] = await Promise.all([
       alpacaFetch(`${baseUrl}/v2/account`, { headers }),
-      alpacaFetch(`${baseUrl}/v2/clock`, { headers }),
+      fetchMarketClock(baseUrl, headers),
       alpacaFetch(`${baseUrl}/v2/positions`, { headers }),
       alpacaFetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers }),
       alpacaFetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers }),
       alpacaFetch(historyUrl, { headers })
     ]);
 
-    const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw, historyRaw] = await Promise.all([
+    const [account, positionsRaw, ordersRaw, recentOrdersRaw, historyRaw] = await Promise.all([
       accountRes.json().catch(() => ({})),
-      clockRes.json().catch(() => ({})),
       positionsRes.json().catch(() => ([])),
       ordersRes.json().catch(() => ([])),
       recentOrdersRes.json().catch(() => ([])),
       historyRes.json().catch(() => ({}))
     ]);
+    const clock=clockPack.data||{};
 
     const checks = [
-      { name: 'account', response: accountRes, body: account },
-      { name: 'clock', response: clockRes, body: clock },
-      { name: 'positions', response: positionsRes, body: positionsRaw },
-      { name: 'open_orders', response: ordersRes, body: ordersRaw },
-      { name: 'recent_orders', response: recentOrdersRes, body: recentOrdersRaw }
-    ].map(x => ({
-      name: x.name,
-      ok: x.response.ok,
-      status: x.response.status,
-      message: x.response.ok ? null : String(x.body?.message || x.body?.error || x.response.statusText || 'request failed').slice(0,180)
-    }));
+      { name: 'account', ok: accountRes.ok, status: accountRes.status, message: accountRes.ok?null:String(account?.message||account?.error||accountRes.statusText||'request failed').slice(0,180) },
+      { name: 'clock', ok: clockPack.ok, status: clockPack.status||null, message: clockPack.ok?null:String(clockPack.error||'market clock failed').slice(0,180) },
+      { name: 'positions', ok: positionsRes.ok, status: positionsRes.status, message: positionsRes.ok?null:String(positionsRaw?.message||positionsRaw?.error||positionsRes.statusText||'request failed').slice(0,180) },
+      { name: 'open_orders', ok: ordersRes.ok, status: ordersRes.status, message: ordersRes.ok?null:String(ordersRaw?.message||ordersRaw?.error||ordersRes.statusText||'request failed').slice(0,180) },
+      { name: 'recent_orders', ok: recentOrdersRes.ok, status: recentOrdersRes.status, message: recentOrdersRes.ok?null:String(recentOrdersRaw?.message||recentOrdersRaw?.error||recentOrdersRes.statusText||'request failed').slice(0,180) }
+    ];
 
     const failed = checks.filter(x => !x.ok);
     if (failed.length) {
-      const summary = failed.map(x => `${x.name} HTTP ${x.status}${x.message ? ': ' + x.message : ''}`).join(' · ');
+      const summary = failed.map(x => `${x.name}${x.status?' HTTP '+x.status:''}${x.message ? ': ' + x.message : ''}`).join(' · ');
       return res.status(502).json({
         error: `Alpaca core check failed — ${summary}`,
         checks
