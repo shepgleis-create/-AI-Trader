@@ -181,6 +181,21 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Decision Memory</div>
+      <p class="muted">Persistent research memory for BUY, SKIP and veto decisions. Stored candidates are revisited after 1, 3 and 5 trading days so skipped trades can be judged too.</p>
+      <button id="memoryStatus">Refresh Decision Memory</button>
+      <button id="gradeOutcomes">Grade Pending Outcomes Now</button>
+      <div id="memoryStatusOut" class="empty">Checking persistent storage…</div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Filter Outcome Attribution</div>
+      <p class="muted">Measures what happened after each decision stage and veto. This is observational research and does not auto-change the strategy.</p>
+      <button id="memoryAttribution">Analyze Decision Outcomes</button>
+      <div id="memoryAttributionOut" class="empty">No outcome attribution loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Execution Journal</div>
       <div id="history" class="empty">Loading…</div>
     </div>
@@ -251,6 +266,7 @@ async function login(){
     await load();
     await loadHistory();
     await loadAccountRisk();
+    await loadMemoryStatus();
   }catch(e){
     showLogin(e.message||'Login failed');
   }finally{
@@ -791,6 +807,98 @@ async function emergencyClose(){
   }
 }
 
+async function loadMemoryStatus(){
+  const btn=document.getElementById('memoryStatus'),box=document.getElementById('memoryStatusOut');
+  if(btn)btn.disabled=true;
+  box.className='empty';box.textContent='Loading Decision Memory status…';
+  try{
+    const r=await apiFetch('/api/memory-status',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Decision Memory status failed');
+
+    if(!d.configured){
+      box.className='warning';
+      box.innerHTML='<strong>DATABASE NOT CONNECTED YET</strong>'+
+        '<div class="muted tiny" style="margin-top:6px">The Decision Memory code is deployed and waiting for a Postgres database. Trading continues normally; memory writes are safely skipped until storage is connected.</div>'+
+        '<div class="muted tiny" style="margin-top:6px">Supported connection variables: '+esc((d.expected_env||[]).join(' · '))+'</div>';
+      return;
+    }
+
+    const o=d.outcomes||{},counts=d.counts||{};
+    box.className='';
+    box.innerHTML=
+      '<div class="positive"><strong>DECISION MEMORY ONLINE</strong></div>'+
+      '<div class="grid" style="margin-top:10px">'+
+        '<div class="card"><div class="label">Decision Cycles</div><div class="value">'+Number(counts.cycles||0)+'</div></div>'+
+        '<div class="card"><div class="label">Candidates Stored</div><div class="value">'+Number(counts.candidates||0)+'</div></div>'+
+        '<div class="card"><div class="label">1D Outcomes</div><div class="value">'+Number(o.outcome_1d_count||0)+'</div></div>'+
+        '<div class="card"><div class="label">3D Outcomes</div><div class="value">'+Number(o.outcome_3d_count||0)+'</div></div>'+
+        '<div class="card"><div class="label">5D Outcomes</div><div class="value">'+Number(o.outcome_5d_count||0)+'</div></div>'+
+        '<div class="card"><div class="label">Selected 5D Avg</div><div class="value '+((Number(o.selected_avg_5d||0))>=0?'positive':'negative')+'">'+(o.selected_avg_5d==null?'—':pct(o.selected_avg_5d))+'</div></div>'+
+      '</div>'+
+      '<div class="kv" style="margin-top:8px"><span class="muted">Skipped candidate 5D average</span><strong class="'+((Number(o.skipped_avg_5d||0))>=0?'positive':'negative')+'">'+(o.skipped_avg_5d==null?'—':pct(o.skipped_avg_5d))+'</strong></div>'+
+      '<div class="kv"><span class="muted">All-candidate 1D average</span><strong>'+(o.avg_1d==null?'—':pct(o.avg_1d))+'</strong></div>'+
+      '<div class="kv"><span class="muted">All-candidate 3D average</span><strong>'+(o.avg_3d==null?'—':pct(o.avg_3d))+'</strong></div>'+
+      '<div class="kv"><span class="muted">All-candidate 5D average</span><strong>'+(o.avg_5d==null?'—':pct(o.avg_5d))+'</strong></div>';
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Decision Memory status failed';
+  }finally{if(btn)btn.disabled=false}
+}
+
+async function gradeDecisionOutcomes(){
+  const btn=document.getElementById('gradeOutcomes'),box=document.getElementById('memoryStatusOut');
+  btn.disabled=true;box.className='empty';box.textContent='Checking stored candidates for new 1D / 3D / 5D outcomes…';
+  try{
+    const r=await apiFetch('/api/outcome-cycle',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Outcome grading failed');
+    if(!d.configured){
+      box.className='warning';
+      box.textContent='Decision Memory is waiting for a Postgres database connection.';
+      return;
+    }
+    box.className='positive';
+    box.textContent='Outcome grading complete · pending checked '+Number(d.pending||0)+' · candidates updated '+Number(d.graded||0)+' · outcome fields written '+Number(d.outcome_fields_updated||0);
+    setTimeout(()=>loadMemoryStatus(),500);
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Outcome grading failed';
+  }finally{btn.disabled=false}
+}
+
+async function loadMemoryAttribution(){
+  const btn=document.getElementById('memoryAttribution'),box=document.getElementById('memoryAttributionOut');
+  btn.disabled=true;box.className='empty';box.textContent='Measuring selected, skipped and vetoed candidate outcomes…';
+  try{
+    const r=await apiFetch('/api/memory-attribution',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Memory attribution failed');
+    if(!d.configured){
+      box.className='warning';
+      box.textContent='Decision Memory database is not connected yet.';
+      return;
+    }
+
+    const seg=d.segments||[],stages=d.stages||[],risk=d.risk_rules||[],intraday=d.intraday_rules||[];
+    box.className='';
+    box.innerHTML=
+      (stages.length?'<div><div class="label">Decision Stage Outcomes</div><div class="tablewrap"><table><thead><tr><th>Stage</th><th>Samples</th><th>1D</th><th>3D</th><th>5D</th></tr></thead><tbody>'+
+        stages.map(x=>'<tr><td><strong>'+esc(x.stage)+'</strong></td><td>'+Number(x.candidate_samples||0)+'</td><td>'+((x.avg_1d==null)?'—':pct(x.avg_1d))+'</td><td>'+((x.avg_3d==null)?'—':pct(x.avg_3d))+'</td><td>'+((x.avg_5d==null)?'—':pct(x.avg_5d))+'</td></tr>').join('')+
+        '</tbody></table></div></div>':'<div class="muted">No graded outcomes yet.</div>')+
+      (risk.length?'<div style="margin-top:14px"><div class="label">Hard-Risk Rule Outcomes</div><div class="tablewrap"><table><thead><tr><th>Rule</th><th>Samples</th><th>1D</th><th>3D</th><th>5D</th></tr></thead><tbody>'+
+        risk.map(x=>'<tr><td>'+esc(x.reason)+'</td><td>'+Number(x.samples||0)+'</td><td>'+((x.avg_1d==null)?'—':pct(x.avg_1d))+'</td><td>'+((x.avg_3d==null)?'—':pct(x.avg_3d))+'</td><td>'+((x.avg_5d==null)?'—':pct(x.avg_5d))+'</td></tr>').join('')+
+        '</tbody></table></div></div>':'')+
+      (intraday.length?'<div style="margin-top:14px"><div class="label">Intraday-Veto Outcomes</div><div class="tablewrap"><table><thead><tr><th>Rule</th><th>Samples</th><th>1D</th><th>3D</th><th>5D</th></tr></thead><tbody>'+
+        intraday.map(x=>'<tr><td>'+esc(x.reason)+'</td><td>'+Number(x.samples||0)+'</td><td>'+((x.avg_1d==null)?'—':pct(x.avg_1d))+'</td><td>'+((x.avg_3d==null)?'—':pct(x.avg_3d))+'</td><td>'+((x.avg_5d==null)?'—':pct(x.avg_5d))+'</td></tr>').join('')+
+        '</tbody></table></div></div>':'')+
+      (seg.length?'<div class="muted tiny" style="margin-top:10px">Segment rows available: '+seg.length+' · includes selected/skipped, event-risk and readiness buckets.</div>':'');
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Memory attribution failed';
+  }finally{btn.disabled=false}
+}
+
 async function loadHistory(){
   const box=document.getElementById('history');
   try{
@@ -818,6 +926,9 @@ document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('preflight').addEventListener('click',runPreflight);
 document.getElementById('alpacaDiag').addEventListener('click',runAlpacaDiagnostics);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
+document.getElementById('memoryStatus').addEventListener('click',loadMemoryStatus);
+document.getElementById('gradeOutcomes').addEventListener('click',gradeDecisionOutcomes);
+document.getElementById('memoryAttribution').addEventListener('click',loadMemoryAttribution);
 document.getElementById('performance').addEventListener('click',loadPerformance);
 document.getElementById('benchmarkLab').addEventListener('click',runBenchmarkLab);
 document.getElementById('evidenceGate').addEventListener('click',runEvidenceGate);
@@ -832,6 +943,7 @@ hideLogin();
     await load();
     await loadHistory();
     await loadAccountRisk();
+    await loadMemoryStatus();
   }catch{}
 })();
 </script>
