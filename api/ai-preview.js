@@ -1,8 +1,8 @@
 import { requireDashboardAuth } from '../lib/auth.js';
-import { fetchMarketScan } from '../lib/strategy.js';
+import { fetchMarketScan, fetchBarsForSymbols } from '../lib/strategy.js';
 import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
-import { evaluateEntry, entryThresholdForRegime } from '../lib/risk.js';
+import { evaluateEntry, entryThresholdForRegime, maxPortfolioCorrelation } from '../lib/risk.js';
 
 export default async function handler(req, res) {
   if (!requireDashboardAuth(req, res)) return;
@@ -98,6 +98,19 @@ export default async function handler(req, res) {
       ? eligible.find(c => c.symbol === decision.symbol)
       : null;
 
+    let portfolioCorrelation = null;
+    if (pick && positions.length) {
+      const symbols = [...new Set([pick.symbol, ...positions.map(p => p.symbol)])];
+      const correlationBars = await fetchBarsForSymbols(symbols, alpacaKey, alpacaSecret, 100);
+      const heldBars = Object.fromEntries(
+        positions.map(p => [p.symbol, correlationBars[p.symbol] || []])
+      );
+      portfolioCorrelation = maxPortfolioCorrelation(
+        correlationBars[pick.symbol] || [],
+        heldBars
+      );
+    }
+
     const risk = pick
       ? evaluateEntry({
           account,
@@ -105,7 +118,8 @@ export default async function handler(req, res) {
           candidate: pick,
           regime: scan.regime,
           eventContext: candidateContext[pick.symbol],
-          confidence: decision.confidence
+          confidence: decision.confidence,
+          portfolioCorrelation
         })
       : {
           approved: false,
