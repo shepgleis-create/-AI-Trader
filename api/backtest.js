@@ -1,3 +1,4 @@
+import { requireDashboardAuth } from '../lib/auth.js';
 import { fetchMarketScan, fetchBarsForSymbols, analyze, detectMarketRegime } from '../lib/strategy.js';
 import { entryThresholdForRegime } from '../lib/risk.js';
 
@@ -22,6 +23,7 @@ function dateKey(bar) {
 }
 
 export default async function handler(req, res) {
+  if (!requireDashboardAuth(req, res)) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const key = process.env.ALPACA_API_KEY;
