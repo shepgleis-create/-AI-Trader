@@ -123,7 +123,9 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
       <div class="label">Crypto Radar</div>
       <p class="muted">Scans every active Alpaca USD crypto pair for momentum, liquidity, volatility, and pump/fade risk. Research-only until the dedicated 24/7 crypto exit monitor is live.</p>
       <button id="cryptoScan">Run Crypto Scan</button>
+      <button id="paperCrypto" disabled>Run the crypto scan first</button>
       <div id="cryptoScanOut" class="empty">No crypto scan run yet.</div>
+      <div id="paperCryptoOut" class="muted"></div>
     </div>
 
     <div class="card wide">
@@ -131,7 +133,9 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
       <p class="muted">Builds call or put candidates from the best current bullish/bearish underlying. Uses option-chain quotes and Greeks; execution remains research-only for now.</p>
       <button id="bullOptions" disabled>Run stock scan for bullish calls</button>
       <button id="bearOptions" disabled>Run bearish scan for puts</button>
+      <button id="paperOption" disabled>Load an options chain first</button>
       <div id="optionsLabOut" class="empty">No options chain loaded yet.</div>
+      <div id="paperOptionOut" class="muted"></div>
     </div>
 
     <div class="card wide">
@@ -242,8 +246,8 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
       <div class="kv"><span class="muted">Same-symbol cooldown</span><strong>5 days</strong></div>
       <div class="kv"><span class="muted">Long entry protection</span><strong>Broker-side bracket stop + target</strong></div>
       <div class="kv"><span class="muted">Short calibration</span><strong>ETB only · whole-share · $100 ceiling · bracket protected</strong></div>
-      <div class="kv"><span class="muted">Crypto execution</span><strong>OFF — research scan only</strong></div>
-      <div class="kv"><span class="muted">Options execution</span><strong>OFF — chain research only</strong></div>
+      <div class="kv"><span class="muted">Crypto calibration</span><strong>$25 spot-long · high pump-risk blocked · app-managed −5% / +10%</strong></div>
+      <div class="kv"><span class="muted">Options calibration</span><strong>Long calls/puts only · 1 contract · max $100 premium · app-managed −35% / +70%</strong></div>
     </div>
   </section>
   <p id="error" class="error"></p>
@@ -309,6 +313,9 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&
 let topCandidate=null;
 let topBearish=null;
 let topCrypto=null;
+let topOptionCandidate=null;
+let topOptionUnderlying=null;
+let topOptionDirection=null;
 let marketIsOpen=false;
 let lastRegime=null;
 
@@ -407,6 +414,8 @@ function updateMultiAssetButtons(){
   const shortBtn=document.getElementById('paperShort');
   const bull=document.getElementById('bullOptions');
   const bear=document.getElementById('bearOptions');
+  const cryptoBtn=document.getElementById('paperCrypto');
+  const optionBtn=document.getElementById('paperOption');
 
   if(shortBtn){
     if(!topBearish){
@@ -435,6 +444,29 @@ function updateMultiAssetButtons(){
     bear.textContent=topBearish
       ?'Put Chain · '+topBearish.symbol+' ('+topBearish.score+')'
       :'Run bearish scan for puts';
+  }
+
+  if(cryptoBtn){
+    if(!topCrypto){
+      cryptoBtn.disabled=true;
+      cryptoBtn.textContent='Run the crypto scan first';
+    }else{
+      cryptoBtn.disabled=false;
+      cryptoBtn.textContent='Paper Crypto '+topCrypto.symbol+' — $25';
+    }
+  }
+
+  if(optionBtn){
+    if(!topOptionCandidate){
+      optionBtn.disabled=true;
+      optionBtn.textContent='Load an options chain first';
+    }else if(!marketIsOpen){
+      optionBtn.disabled=true;
+      optionBtn.textContent='Options market closed — '+topOptionCandidate.contract;
+    }else{
+      optionBtn.disabled=false;
+      optionBtn.textContent='Paper Buy '+(topOptionDirection==='BEARISH'?'Put':'Call')+' · '+topOptionCandidate.contract+' · max $100 premium';
+    }
   }
 }
 
@@ -506,7 +538,8 @@ async function runCryptoScan(){
     if(!r.ok)throw new Error(d.error||'Crypto scan failed');
 
     const rows=d.candidates||[];
-    topCrypto=rows.find(x=>x.pump_dump_risk!=='HIGH'&&x.score>=70)||rows[0]||null;
+    topCrypto=rows.find(x=>x.pump_dump_risk!=='HIGH'&&x.score>=75)||rows.find(x=>x.pump_dump_risk!=='HIGH')||null;
+    updateMultiAssetButtons();
     if(!rows.length){box.className='empty';box.textContent='No crypto candidates returned.';return}
 
     box.className='';
@@ -530,6 +563,50 @@ async function runCryptoScan(){
   }catch(e){
     box.className='error';box.textContent=e.message||'Crypto scan failed';
   }finally{btn.disabled=false}
+}
+
+async function paperCrypto(){
+  if(!topCrypto)return;
+  const btn=document.getElementById('paperCrypto'),out=document.getElementById('paperCryptoOut');
+  btn.disabled=true;out.className='muted';out.textContent='Rechecking crypto score, pump risk, spread and account risk…';
+  try{
+    const r=await apiFetch('/api/paper-crypto',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({symbol:topCrypto.symbol})
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Paper crypto order failed');
+    out.className='positive';
+    out.textContent='Paper crypto order submitted · '+d.symbol+' · $'+Number(d.notional||0).toFixed(0)+' · limit '+money(d.limit_price)+' · app stop '+pct(d.app_stop_pct)+' · target '+pct(d.app_target_pct)+' · max hold '+Number(d.max_hold_hours||0)+'h';
+    await load();await loadHistory();
+  }catch(e){
+    out.className='error';out.textContent=e.message||'Paper crypto order failed';
+  }finally{updateMultiAssetButtons()}
+}
+
+async function paperOption(){
+  if(!topOptionCandidate||!topOptionUnderlying||!topOptionDirection)return;
+  const btn=document.getElementById('paperOption'),out=document.getElementById('paperOptionOut');
+  btn.disabled=true;out.className='muted';out.textContent='Revalidating option chain, account level, premium, spread and risk…';
+  try{
+    const r=await apiFetch('/api/paper-option',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        underlying:topOptionUnderlying,
+        contract:topOptionCandidate.contract,
+        direction:topOptionDirection
+      })
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Paper option order failed');
+    out.className='positive';
+    out.textContent='Paper '+(d.strategy==='LONG_PUT'?'put':'call')+' submitted · '+d.contract+' · 1 contract · limit '+money(d.limit_price)+' · max premium '+money(d.estimated_max_premium_dollars)+' · app stop '+pct(d.app_stop_pct)+' · target '+pct(d.app_target_pct);
+    await load();await loadHistory();
+  }catch(e){
+    out.className='error';out.textContent=e.message||'Paper option order failed';
+  }finally{updateMultiAssetButtons()}
 }
 
 async function runOptionsLab(direction){
@@ -559,6 +636,10 @@ async function runOptionsLab(direction){
       return;
     }
     const rows=d.contracts||[];
+    topOptionCandidate=rows.find(x=>x.quality_score>=75&&x.spread_pct!=null&&x.spread_pct<=0.12&&(Number(x.ask||0)*100)<=100)||null;
+    topOptionUnderlying=source.symbol;
+    topOptionDirection=direction;
+    updateMultiAssetButtons();
     box.className='';
     box.innerHTML=
       '<div class="warning tiny"><strong>RESEARCH ONLY</strong> · '+esc(d.underlying)+' '+esc(d.option_type)+'s · underlying '+money(d.underlying_price)+' · feed '+esc(d.feed||'indicative')+'</div>'+
@@ -1134,6 +1215,8 @@ document.getElementById('scan').addEventListener('click',runScan);
 document.getElementById('shortScan').addEventListener('click',runShortScan);
 document.getElementById('paperShort').addEventListener('click',paperShort);
 document.getElementById('cryptoScan').addEventListener('click',runCryptoScan);
+document.getElementById('paperCrypto').addEventListener('click',paperCrypto);
+document.getElementById('paperOption').addEventListener('click',paperOption);
 document.getElementById('bullOptions').addEventListener('click',()=>runOptionsLab('BULLISH'));
 document.getElementById('bearOptions').addEventListener('click',()=>runOptionsLab('BEARISH'));
 document.getElementById('exposureMap').addEventListener('click',loadExposureMap);
