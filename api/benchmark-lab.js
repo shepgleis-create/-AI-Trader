@@ -145,12 +145,16 @@ export default async function handler(req,res){
     if(!hr.ok) return res.status(hr.status).json({error:h?.message||'Could not load paper-account history'});
 
     const equity=(h?.equity||[]).map(Number);
+    const pnlPct=(h?.profit_loss_pct||[]).map(Number);
     const timestamps=h?.timestamp||[];
+    const useBrokerPnl=pnlPct.length===timestamps.length&&pnlPct.some(Number.isFinite);
 
     let bot=(timestamps||[]).map((ts,i)=>({
       date:dateKeyFromUnix(ts),
-      value:equity[i]
-    })).filter(x=>x.value>0).sort((a,b)=>a.date.localeCompare(b.date));
+      value:useBrokerPnl&&Number.isFinite(pnlPct[i])
+        ?10000*(1+pnlPct[i])
+        :equity[i]
+    })).filter(x=>Number.isFinite(x.value)&&x.value>0).sort((a,b)=>a.date.localeCompare(b.date));
 
     if(bot.length<2){
       return res.status(200).json({
@@ -223,8 +227,9 @@ export default async function handler(req,res){
       methodology:{
         comparison:'Exact overlapping daily dates',
         benchmark_start_value:10000,
+        bot_return_source:useBrokerPnl?'Alpaca portfolio-history profit_loss_pct':'Raw equity fallback',
         sixty_forty:'60% VTI + 40% BND, daily-rebalanced research benchmark',
-        note:'Risk-adjusted metrics use zero risk-free rate for comparison consistency.'
+        note:'Risk-adjusted metrics use zero risk-free rate for comparison consistency. Alpaca portfolio P/L uses its base-value method.'
       },
       rows,
       excess_return:{
