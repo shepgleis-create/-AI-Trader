@@ -9,6 +9,10 @@
     {
       "path": "/api/auto-cycle",
       "schedule": "*/15 13-21 * * 1-5"
+    },
+    {
+      "path": "/api/outcome-cycle",
+      "schedule": "15 22 * * 1-5"
     }
   ]
 }
