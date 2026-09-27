@@ -3,6 +3,8 @@ import { getPortfolioRisk } from '../lib/risk.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getIntradayConfirmation } from '../lib/intraday.js';
 
+const ENTRY_LIMIT_CUSHION_PCT = 0.001;
+
 async function getAsset(symbol, baseUrl, headers) {
   const r = await fetch(`${baseUrl}/v2/assets/${encodeURIComponent(symbol)}`, { headers });
   const data = await r.json();
@@ -198,6 +200,7 @@ export default async function handler(req, res) {
       }
     }
 
+    const entryLimitPrice = (price * (1 + ENTRY_LIMIT_CUSHION_PCT)).toFixed(2);
     const stopPrice = (price * 0.97).toFixed(2);
     const takeProfitPrice = (price * 1.06).toFixed(2);
 
@@ -208,7 +211,8 @@ export default async function handler(req, res) {
         symbol,
         qty: qty.toString(),
         side: 'buy',
-        type: 'market',
+        type: 'limit',
+        limit_price: entryLimitPrice,
         time_in_force: 'day',
         order_class: 'bracket',
         take_profit: { limit_price: takeProfitPrice },
@@ -231,6 +235,8 @@ export default async function handler(req, res) {
       qty,
       approximate_notional: qty * price,
       reference_price: price,
+      entry_limit_price: Number(entryLimitPrice),
+      execution_policy: 'PRICE_CAPPED_LIMIT_BRACKET',
       execution_spread_pct: execution.spread_pct,
       execution_quote_age_seconds: execution.age_seconds,
       intraday_confirmation: intraday,
@@ -238,7 +244,7 @@ export default async function handler(req, res) {
       take_profit_price: Number(takeProfitPrice),
       order_id: order.id,
       status: order.status,
-      message: `Bracket paper order submitted for ${symbol} with broker-side stop and target.`
+      message: `Price-capped bracket paper order submitted for ${symbol} with broker-side stop and target.`
     });
   } catch (error) {
     return res.status(500).json({ error: error?.message || 'Paper order request failed.' });
