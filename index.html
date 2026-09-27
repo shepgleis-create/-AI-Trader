@@ -144,6 +144,15 @@ body{padding:0;overflow-x:hidden}
 }
 .quick-actions button:hover{background:#1d2735}
 .page-empty-note{grid-column:1/-1;color:#7f8a99;padding:22px;border:1px dashed #2a3441;border-radius:14px}
+.subworkspace-tabs{grid-column:1/-1;display:flex;gap:6px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
+.subworkspace-tabs::-webkit-scrollbar{display:none}
+.subworkspace-tab{width:auto;flex:0 0 auto;margin:0;padding:9px 12px;border-radius:10px;background:#101722;color:#7f8b9c;border:1px solid #263142;font-size:11px}
+.subworkspace-tab.active{background:#eef2f7;color:#0a0d12;border-color:#eef2f7}
+.subworkspace-panel{display:none;grid-column:1/-1;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}
+.subworkspace-panel.active{display:grid}
+.subworkspace-panel>.card{grid-column:1/-1}
+@media(min-width:1051px){.subworkspace-panel>.card.compact-half{grid-column:span 6}}
+
 .overview-snapshot{grid-column:1/-1!important;padding:0!important;overflow:hidden}
 .snapshot-head{padding:15px 17px 10px;border-bottom:1px solid #222c3a}
 .snapshot-grid{display:grid;grid-template-columns:repeat(3,1fr)}
@@ -170,19 +179,21 @@ body{padding:0;overflow-x:hidden}
 @media(max-width:760px){
   body{padding:0}
   .sidebar{
-    width:58px;padding:calc(env(safe-area-inset-top) + 8px) 7px max(12px,env(safe-area-inset-bottom));
+    width:70px;padding:calc(env(safe-area-inset-top) + 8px) 6px max(12px,env(safe-area-inset-bottom));
     align-items:stretch;overflow:visible;transition:width .2s ease,box-shadow .2s ease
   }
   .sidebar-toggle{display:flex}
   .sidebar-brand{padding:0 4px 12px;justify-content:center}
   .brand-mark{width:36px;height:36px}
-  .brand-copy,.nav-section-title,.nav-label,.sidebar-mode span:not(.dot){display:none}
-  .nav-btn{justify-content:center;padding:9px 7px}
+  .brand-copy,.nav-section-title,.sidebar-mode span:not(.dot){display:none}
+  .nav-btn{justify-content:center;flex-direction:column;gap:3px;padding:5px 2px;min-height:45px}
   .nav-sub{padding-left:0}
-  .nav-icon{width:31px;height:31px;border-radius:9px}
+  .nav-icon{width:27px;height:27px;border-radius:8px;font-size:11px}
+  .nav-label{display:block;font-size:7px;line-height:1.05;color:#718095;text-align:center;max-width:58px}
+  .nav-btn.active .nav-label{color:#e9eef5}
   .sidebar-foot{padding:10px 4px 2px}
   .sidebar-mode{justify-content:center}
-  .main-shell{margin-left:58px}
+  .main-shell{margin-left:70px}
   .wrap{padding:calc(env(safe-area-inset-top) + 15px) 13px calc(74px + env(safe-area-inset-bottom))}
   .workspace-head{align-items:center}
   .workspace-eyebrow{display:none}
@@ -201,7 +212,12 @@ body{padding:0;overflow-x:hidden}
   #page-overview-grid>.card:nth-child(-n+6) .value{font-size:20px}
   .overview-quick{grid-template-columns:1fr!important}
   .quick-actions{grid-template-columns:1fr 1fr}
-  table{min-width:720px}
+  .page-view:not([data-view="overview"]) .card{padding:13px}
+  .page-view:not([data-view="overview"]) .card>p.muted{font-size:13px;line-height:1.42;margin:8px 0 10px}
+  .page-view:not([data-view="overview"]) .card>button{padding:11px 12px;margin:8px 0;font-size:13px;border-radius:11px}
+  .page-view:not([data-view="overview"]) .label{font-size:9px}
+  .page-view:not([data-view="overview"]) .empty{padding:10px 0}
+  table{min-width:680px}
   .sidebar.expanded{
     width:min(292px,82vw);box-shadow:24px 0 60px rgba(0,0,0,.58);align-items:stretch
   }
@@ -210,7 +226,8 @@ body{padding:0;overflow-x:hidden}
   .sidebar.expanded .nav-section-title,
   .sidebar.expanded .nav-label,
   .sidebar.expanded .sidebar-mode span:not(.dot){display:block}
-  .sidebar.expanded .nav-btn{justify-content:flex-start}
+  .sidebar.expanded .nav-btn{justify-content:flex-start;flex-direction:row;gap:11px;padding:9px 10px}
+  .sidebar.expanded .nav-label{font-size:12px;line-height:1.2;color:#aeb8c5;max-width:none;text-align:left}
   .sidebar.expanded .nav-sub{padding-left:12px}
   .sidebar.expanded .sidebar-mode{justify-content:flex-start}
   .sidebar-backdrop.visible{display:block;position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:80}
@@ -568,6 +585,7 @@ const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).
 const pct=n=>(Number(n||0)*100).toFixed(2)+'%';
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 let topCandidate=null;
+let lastScanCandidates=[];
 let topBearish=null;
 let topCrypto=null;
 let topOptionCandidate=null;
@@ -670,6 +688,49 @@ function showWorkspacePage(page,opts={}){
   if(window.innerWidth<=760)closeSidebar();
 }
 
+function setupSubWorkspace(page,groups,defaultKey){
+  const grid=document.getElementById('page-'+page+'-grid');
+  if(!grid||grid.dataset.grouped==='true')return;
+  grid.dataset.grouped='true';
+
+  const cards=[...grid.children].filter(x=>x.classList?.contains('card'));
+  const tabs=document.createElement('div');
+  tabs.className='subworkspace-tabs';
+  const panels=new Map();
+
+  for(const group of groups){
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='subworkspace-tab';
+    btn.textContent=group.label;
+    btn.dataset.group=group.key;
+    tabs.appendChild(btn);
+
+    const panel=document.createElement('div');
+    panel.className='subworkspace-panel';
+    panel.dataset.groupPanel=group.key;
+    grid.appendChild(panel);
+    panels.set(group.key,panel);
+  }
+  grid.insertBefore(tabs,grid.firstChild);
+
+  const firstKey=groups[0]?.key;
+  for(const card of cards){
+    const label=card.querySelector(':scope > .label')?.textContent?.trim()||'';
+    const group=groups.find(g=>(g.labels||[]).includes(label));
+    panels.get(group?.key||firstKey)?.appendChild(card);
+  }
+
+  function activate(key){
+    tabs.querySelectorAll('.subworkspace-tab').forEach(b=>b.classList.toggle('active',b.dataset.group===key));
+    panels.forEach((panel,k)=>panel.classList.toggle('active',k===key));
+    sessionStorage.setItem('ai_trader_'+page+'_tab',key);
+  }
+  tabs.querySelectorAll('.subworkspace-tab').forEach(b=>b.addEventListener('click',()=>activate(b.dataset.group)));
+  const saved=sessionStorage.getItem('ai_trader_'+page+'_tab');
+  activate(groups.some(g=>g.key===saved)?saved:(defaultKey||firstKey));
+}
+
 function routeWorkspaceCards(){
   const legacy=document.getElementById('legacyGrid');
   if(!legacy)return;
@@ -723,6 +784,18 @@ function routeWorkspaceCards(){
     const target=document.getElementById('page-'+page+'-grid');
     if(target)target.appendChild(card);
   });
+
+  setupSubWorkspace('research',[
+    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution']},
+    {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
+    {key:'memory',label:'Memory',labels:['Decision Memory','Filter Outcome Attribution']}
+  ],'performance');
+
+  setupSubWorkspace('system',[
+    {key:'health',label:'Health',labels:['System Preflight','Alpaca Diagnostics']},
+    {key:'risk',label:'Risk',labels:['Risk Control','Account Circuit Breakers','Current Safety Policy']},
+    {key:'safety',label:'Safety',labels:['Emergency Paper Kill']}
+  ],'health');
 
   const overview=document.getElementById('page-overview-grid');
   if(overview&&!document.getElementById('overviewSnapshot')){
@@ -1141,7 +1214,8 @@ async function runScan(){
     const r=await apiFetch('/api/scan',{cache:'no-store'});const d=await r.json();
     if(!r.ok) throw new Error(d.error||'Scan failed');
     lastRegime=d.regime||null;
-    topCandidate=d.candidates?.[0]||null;updatePaperButton();updateMultiAssetButtons();
+    lastScanCandidates=Array.isArray(d.candidates)?d.candidates:[];
+    topCandidate=lastScanCandidates[0]||null;updatePaperButton();updateMultiAssetButtons();
     if(!topCandidate){box.textContent='No candidates returned.';return}
     box.className='';
     const leaders=(d.regime?.sector_leaders||[]).map(x=>x.symbol+' '+pct(x.return_20d)).join(' · ');
@@ -1547,7 +1621,12 @@ async function runRobustnessLab(){
   const btn=document.getElementById('robustnessLab'),box=document.getElementById('robustnessLabOut');
   btn.disabled=true;box.className='empty';box.textContent='Running train/validation parameter grid… this is a heavy research test.';
   try{
-    const r=await apiFetch('/api/robustness-lab',{cache:'no-store'});
+    const r=await apiFetch('/api/robustness-lab',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({symbols:lastScanCandidates.slice(0,20).map(x=>x.symbol)}),
+      cache:'no-store'
+    });
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||'Robustness Lab failed');
 
