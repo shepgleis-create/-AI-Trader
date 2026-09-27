@@ -45,11 +45,13 @@ export default async function handler(req, res) {
 
     const positionRows = Array.isArray(positions) ? positions : [];
     const risk = getPortfolioRisk(account, positionRows);
-    const protectedSymbols = new Set(
-      (Array.isArray(orders) ? orders : [])
-        .filter(o => o.side === 'sell')
-        .map(o => o.symbol)
-    );
+    const protectedSymbols = new Set();
+    for (const o of (Array.isArray(orders) ? orders : [])) {
+      if (o?.side === 'sell' && o?.symbol) protectedSymbols.add(o.symbol);
+      for (const leg of (Array.isArray(o?.legs) ? o.legs : [])) {
+        if (leg?.side === 'sell') protectedSymbols.add(leg.symbol || o.symbol);
+      }
+    }
 
     return res.status(200).json({
       mode: 'PAPER',
