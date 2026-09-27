@@ -3,9 +3,12 @@ import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
 import { evaluateEntry, entryThresholdForRegime, getPortfolioRisk, maxPortfolioCorrelation } from '../lib/risk.js';
 import { logTraderEvent } from '../lib/journal.js';
+import { isDashboardAuthorized } from '../lib/auth.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
+const MAX_AUTONOMOUS_ENTRIES_PER_DAY = 1;
+const SYMBOL_COOLDOWN_DAYS = 5;
 
 function priceRound(n) {
   return Number(n).toFixed(2);
@@ -44,7 +47,9 @@ export default async function handler(req, res) {
 
   if (!key || !secret) return res.status(500).json({ error: 'Missing Alpaca credentials' });
   if (!cronSecret) return res.status(503).json({ error: 'CRON_SECRET is not configured yet' });
-  if (req.headers.authorization !== `Bearer ${cronSecret}`) {
+  const cronAuthorized = req.headers.authorization === `Bearer ${cronSecret}`;
+  const dashboardAuthorized = isDashboardAuthorized(req);
+  if (!cronAuthorized && !dashboardAuthorized) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!baseUrl.includes('paper-api.alpaca.markets')) {
@@ -58,24 +63,42 @@ export default async function handler(req, res) {
   };
 
   try {
-    const [accountRes, clockRes, positionsRes, ordersRes] = await Promise.all([
+    const [accountRes, clockRes, positionsRes, ordersRes, recentOrdersRes] = await Promise.all([
       fetch(`${baseUrl}/v2/account`, { headers }),
       fetch(`${baseUrl}/v2/clock`, { headers }),
       fetch(`${baseUrl}/v2/positions`, { headers }),
-      fetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers })
+      fetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers }),
+      fetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers })
     ]);
 
-    const [account, clock, positionsRaw, ordersRaw] = await Promise.all([
-      accountRes.json(), clockRes.json(), positionsRes.json(), ordersRes.json()
+    const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw] = await Promise.all([
+      accountRes.json(), clockRes.json(), positionsRes.json(), ordersRes.json(), recentOrdersRes.json()
     ]);
 
-    if (!accountRes.ok || !clockRes.ok || !positionsRes.ok || !ordersRes.ok) {
+    if (!accountRes.ok || !clockRes.ok || !positionsRes.ok || !ordersRes.ok || !recentOrdersRes.ok) {
       return res.status(502).json({ error: 'Alpaca pre-trade checks failed' });
     }
 
     const positions = Array.isArray(positionsRaw) ? positionsRaw : [];
     const openOrders = Array.isArray(ordersRaw) ? ordersRaw : [];
+    const recentOrders = Array.isArray(recentOrdersRaw) ? recentOrdersRaw : [];
     const portfolioRisk = getPortfolioRisk(account, positions);
+
+    const today = new Date().toISOString().slice(0,10);
+    const autonomousParents = recentOrders.filter(o =>
+      o?.side === 'buy' &&
+      String(o?.client_order_id || '').startsWith('aitr-')
+    );
+    const entriesToday = autonomousParents.filter(o =>
+      String(o?.submitted_at || '').slice(0,10) === today
+    );
+    const cooldownCutoff = Date.now() - SYMBOL_COOLDOWN_DAYS * 86400000;
+    const recentlyTradedSymbols = new Set(
+      autonomousParents
+        .filter(o => new Date(o?.submitted_at || 0).getTime() >= cooldownCutoff)
+        .map(o => o.symbol)
+        .filter(Boolean)
+    );
 
     if (!clock.is_open) {
       logTraderEvent('market_closed', { enabled, next_open: clock.next_open });
@@ -145,6 +168,28 @@ export default async function handler(req, res) {
       });
     }
 
+    if (entriesToday.length >= MAX_AUTONOMOUS_ENTRIES_PER_DAY) {
+      logTraderEvent('entry_lock', {
+        reason: 'daily_entry_limit',
+        entries_today: entriesToday.length,
+        limit: MAX_AUTONOMOUS_ENTRIES_PER_DAY,
+        enabled
+      });
+      actions.push({
+        type: 'entry_lock',
+        reason: 'Daily autonomous entry limit reached',
+        entries_today: entriesToday.length,
+        limit: MAX_AUTONOMOUS_ENTRIES_PER_DAY
+      });
+      return res.status(200).json({
+        ok: true,
+        mode: 'PAPER',
+        enabled,
+        portfolio_risk: portfolioRisk,
+        actions
+      });
+    }
+
     if (portfolioRisk.exposure_lock || portfolioRisk.position_lock) {
       logTraderEvent('entry_lock', { reason: portfolioRisk.exposure_lock ? 'exposure' : 'position_limit', exposure_pct: portfolioRisk.exposure_pct, positions: positions.length, enabled });
       actions.push({
@@ -171,7 +216,8 @@ export default async function handler(req, res) {
       .filter(c =>
         c.score >= Math.max(68, entryThreshold - 10) &&
         !held.has(c.symbol) &&
-        !ordered.has(c.symbol)
+        !ordered.has(c.symbol) &&
+        !recentlyTradedSymbols.has(c.symbol)
       )
       .slice(0, 5);
 
@@ -386,7 +432,9 @@ export default async function handler(req, res) {
         daily_loss_stop_pct: -0.02,
         max_exposure_pct: 0.30,
         max_positions: 3,
-        max_entry_dollars_during_calibration: 25
+        max_entry_dollars_during_calibration: 25,
+        max_autonomous_entries_per_day: MAX_AUTONOMOUS_ENTRIES_PER_DAY,
+        symbol_cooldown_days: SYMBOL_COOLDOWN_DAYS
       },
       actions
     });
