@@ -535,7 +535,11 @@ async function loadHistory(){
   }catch(e){box.className='error';box.textContent=e.message||'Could not load journal'}
 }
 
-document.getElementById('refresh').addEventListener('click',async()=>{await Promise.all([load(),loadHistory(),loadAccountRisk()])});
+document.getElementById('refresh').addEventListener('click',async()=>{
+  await load();
+  await loadHistory();
+  await loadAccountRisk();
+});
 document.getElementById('scan').addEventListener('click',runScan);
 document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
@@ -547,7 +551,13 @@ document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('emergency').addEventListener('click',emergencyClose);
 document.getElementById('paperbuy').addEventListener('click',paperBuy);
 hideLogin();
-Promise.all([load(),loadHistory(),loadPerformance(),runPreflight(),loadStrategyStats(),loadAccountRisk()]).catch(()=>{});
+(async()=>{
+  try{
+    await load();
+    await loadHistory();
+    await loadAccountRisk();
+  }catch{}
+})();
 </script>
 </body>
 </html>
