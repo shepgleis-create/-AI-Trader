@@ -1,6 +1,7 @@
 import { requireDashboardAuth } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
+import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
 const MAX_SHORT_ENTRY_DOLLARS=100;
 const STOP_PCT=0.04;
@@ -46,7 +47,7 @@ export default async function handler(req,res){
       accountPack,clockPack,positionsPack,ordersPack,recentPack,historyPack,assetPack
     ]=await Promise.all([
       jsonFetch(`${base}/v2/account`,{headers:h}),
-      jsonFetch(`${base}/v2/clock`,{headers:h}),
+      fetchMarketClock(base,h),
       jsonFetch(`${base}/v2/positions`,{headers:h}),
       jsonFetch(`${base}/v2/orders?status=open&limit=100&nested=true`,{headers:h}),
       jsonFetch(`${base}/v2/orders?status=all&limit=500&direction=desc&nested=true`,{headers:h}),
@@ -55,16 +56,17 @@ export default async function handler(req,res){
     ]);
 
     for(const [name,p] of Object.entries({
-      account:accountPack,clock:clockPack,positions:positionsPack,
+      account:accountPack,positions:positionsPack,
       open_orders:ordersPack,recent_orders:recentPack,asset:assetPack
     })){
       if(!p.r.ok)return res.status(502).json({
         error:`Alpaca ${name} check failed — HTTP ${p.r.status}: ${String(p.d?.message||p.r.statusText||'request failed').slice(0,180)}`
       });
     }
+    if(!clockPack.ok)return res.status(502).json({error:`Alpaca clock check failed — ${clockPack.error||'unavailable'}`});
 
     const account=accountPack.d;
-    const clock=clockPack.d;
+    const clock=clockPack.data||{};
     const positions=Array.isArray(positionsPack.d)?positionsPack.d:[];
     const openOrders=Array.isArray(ordersPack.d)?ordersPack.d:[];
     const recentOrders=Array.isArray(recentPack.d)?recentPack.d:[];
