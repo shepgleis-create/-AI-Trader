@@ -22,6 +22,32 @@ function dateKey(bar) {
   return String(bar?.t || '').slice(0,10);
 }
 
+function summarizeTrades(rows) {
+  const trades = Array.isArray(rows) ? rows : [];
+  const wins = trades.filter(t => t.pnl > 0);
+  const losses = trades.filter(t => t.pnl < 0);
+  const grossProfit = wins.reduce((s,t) => s + t.pnl, 0);
+  const grossLoss = Math.abs(losses.reduce((s,t) => s + t.pnl, 0));
+  return {
+    trades: trades.length,
+    win_rate: trades.length ? wins.length / trades.length : 0,
+    pnl: trades.reduce((s,t) => s + t.pnl, 0),
+    avg_return: trades.length ? trades.reduce((s,t) => s + t.return_pct, 0) / trades.length : 0,
+    profit_factor: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 99 : 0
+  };
+}
+
+function groupTradeStats(trades, field) {
+  const groups = {};
+  for (const t of trades) {
+    const key = String(t?.[field] || 'UNKNOWN');
+    (groups[key] ||= []).push(t);
+  }
+  return Object.fromEntries(
+    Object.entries(groups).map(([key, rows]) => [key, summarizeTrades(rows)])
+  );
+}
+
 export default async function handler(req, res) {
   if (!requireDashboardAuth(req, res)) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -104,7 +130,8 @@ export default async function handler(req, res) {
             return_pct: p.cost > 0 ? pnl / p.cost : 0,
             reason,
             score: p.score,
-            regime: p.regime
+            regime: p.regime,
+            setup_type: p.setupType
           });
           positions.delete(symbol);
         } else {
@@ -170,7 +197,8 @@ export default async function handler(req, res) {
             targetPrice: entryPrice * (1 + targetPct),
             daysHeld: 0,
             score: item.candidate.score,
-            regime: item.regime.label
+            regime: item.regime.label,
+            setupType: item.candidate.setup_type || 'TREND'
           });
         }
       }
@@ -204,7 +232,8 @@ export default async function handler(req, res) {
         return_pct: p.cost > 0 ? pnl / p.cost : 0,
         reason: 'end_of_test',
         score: p.score,
-        regime: p.regime
+        regime: p.regime,
+        setup_type: p.setupType
       });
       positions.delete(symbol);
     }
@@ -264,6 +293,11 @@ export default async function handler(req, res) {
         profit_factor: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 99 : 0,
         max_drawdown: maxDrawdown,
         sharpe
+      },
+      attribution: {
+        by_setup: groupTradeStats(trades, 'setup_type'),
+        by_regime: groupTradeStats(trades, 'regime'),
+        by_exit: groupTradeStats(trades, 'reason')
       },
       recent_trades: trades.slice(-12).reverse()
     });
