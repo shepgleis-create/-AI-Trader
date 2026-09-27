@@ -11,6 +11,8 @@ const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
 const MAX_AUTONOMOUS_ENTRIES_PER_DAY = 1;
 const SYMBOL_COOLDOWN_DAYS = 5;
+const ENTRY_TIMEOUT_MINUTES = 20;
+const ENTRY_LIMIT_CUSHION_PCT = 0.001;
 
 function priceRound(n) {
   return Number(n).toFixed(2);
@@ -200,7 +202,10 @@ export default async function handler(req, res) {
     const cooldownCutoff = Date.now() - SYMBOL_COOLDOWN_DAYS * 86400000;
     const recentlyTradedSymbols = new Set(
       autonomousParents
-        .filter(o => new Date(o?.submitted_at || 0).getTime() >= cooldownCutoff)
+        .filter(o =>
+          Number(o?.filled_qty || 0) > 0 &&
+          new Date(o?.submitted_at || 0).getTime() >= cooldownCutoff
+        )
         .map(o => o.symbol)
         .filter(Boolean)
     );
@@ -222,6 +227,51 @@ export default async function handler(req, res) {
     }
 
     const actions = [];
+
+    // Cancel autonomous entry orders that never filled quickly enough.
+    for (const o of openOrders) {
+      if (
+        o?.side !== 'buy' ||
+        !String(o?.client_order_id || '').startsWith('aitr-') ||
+        !o?.id
+      ) continue;
+
+      const submitted = new Date(o?.submitted_at || 0).getTime();
+      if (!(submitted > 0)) continue;
+
+      const ageMinutes = (Date.now() - submitted) / 60000;
+      if (ageMinutes < ENTRY_TIMEOUT_MINUTES) continue;
+
+      if (!enabled) {
+        actions.push({
+          type: 'stale_entry_cancel_dry_run',
+          symbol: o.symbol,
+          age_minutes: Number(ageMinutes.toFixed(1)),
+          order_id: o.id
+        });
+        continue;
+      }
+
+      const cancelRes = await fetch(`${baseUrl}/v2/orders/${encodeURIComponent(o.id)}`, {
+        method: 'DELETE',
+        headers
+      });
+
+      logTraderEvent('stale_entry_cancel', {
+        symbol: o.symbol,
+        order_id: o.id,
+        age_minutes: ageMinutes,
+        submitted: cancelRes.ok
+      });
+
+      actions.push({
+        type: 'stale_entry_cancel',
+        symbol: o.symbol,
+        age_minutes: Number(ageMinutes.toFixed(1)),
+        order_id: o.id,
+        submitted: cancelRes.ok
+      });
+    }
 
     // Legacy safety net for positions opened before bracket orders were added.
     const protectedSymbols = new Set();
@@ -730,6 +780,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
     }
 
+    const entryLimitPrice = priceRound(px * (1 + ENTRY_LIMIT_CUSHION_PCT));
     const stopPrice = priceRound(px * (1 - sizing.stop_pct));
     const takeProfitPrice = priceRound(px * (1 + sizing.take_profit_pct));
     const refCents = Math.max(1, Math.round(px * 100));
@@ -744,6 +795,8 @@ export default async function handler(req, res) {
       notional: sizing.notional,
       qty,
       reference_price: px,
+      entry_limit_price: Number(entryLimitPrice),
+      execution_policy: 'PRICE_CAPPED_LIMIT_BRACKET',
       execution_spread_pct: execution.spread_pct,
       execution_quote_age_seconds: execution.age_seconds,
       intraday_confirmation: intraday,
@@ -763,7 +816,8 @@ export default async function handler(req, res) {
           symbol: pick.symbol,
           qty: qty.toString(),
           side: 'buy',
-          type: 'market',
+          type: 'limit',
+          limit_price: entryLimitPrice,
           time_in_force: 'day',
           order_class: 'bracket',
           take_profit: { limit_price: takeProfitPrice },
@@ -798,7 +852,9 @@ export default async function handler(req, res) {
         max_positions: 3,
         max_entry_dollars_during_calibration: 25,
         max_autonomous_entries_per_day: MAX_AUTONOMOUS_ENTRIES_PER_DAY,
-        symbol_cooldown_days: SYMBOL_COOLDOWN_DAYS
+        symbol_cooldown_days: SYMBOL_COOLDOWN_DAYS,
+        entry_timeout_minutes: ENTRY_TIMEOUT_MINUTES,
+        entry_limit_cushion_pct: ENTRY_LIMIT_CUSHION_PCT
       },
       actions
     });
