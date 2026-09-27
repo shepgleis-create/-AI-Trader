@@ -1,7 +1,7 @@
-import { fetchMarketScan } from '../lib/strategy.js';
+import { fetchMarketScan, fetchBarsForSymbols } from '../lib/strategy.js';
 import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
-import { evaluateEntry, entryThresholdForRegime, getPortfolioRisk } from '../lib/risk.js';
+import { evaluateEntry, entryThresholdForRegime, getPortfolioRisk, maxPortfolioCorrelation } from '../lib/risk.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
@@ -263,13 +263,27 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
     }
 
+    let portfolioCorrelation = null;
+    if (positions.length) {
+      const correlationSymbols = [...new Set([pick.symbol, ...positions.map(p => p.symbol)])];
+      const correlationBars = await fetchBarsForSymbols(correlationSymbols, key, secret, 100);
+      const heldBars = Object.fromEntries(
+        positions.map(p => [p.symbol, correlationBars[p.symbol] || []])
+      );
+      portfolioCorrelation = maxPortfolioCorrelation(
+        correlationBars[pick.symbol] || [],
+        heldBars
+      );
+    }
+
     const risk = evaluateEntry({
       account,
       positions,
       candidate: pick,
       regime: scan.regime,
       eventContext: candidateContext[pick.symbol],
-      confidence: decision.confidence
+      confidence: decision.confidence,
+      portfolioCorrelation
     });
 
     actions.push({
