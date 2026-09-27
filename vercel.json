@@ -4,6 +4,14 @@
     {
       "path": "/api/auto-cycle",
       "schedule": "0 15 * * 1-5"
+    },
+    {
+      "path": "/api/auto-cycle-midday",
+      "schedule": "30 17 * * 1-5"
+    },
+    {
+      "path": "/api/auto-cycle-late",
+      "schedule": "0 19 * * 1-5"
     }
   ]
 }
