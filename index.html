@@ -410,6 +410,8 @@ async function runBacktest(){
     if(!r.ok)throw new Error(d.error||'Backtest failed');
     const m=d.metrics;
     box.className='';
+    const setupRows=Object.entries(d.attribution?.by_setup||{}).sort((a,b)=>(b[1].avg_return||0)-(a[1].avg_return||0));
+    const regimeRows=Object.entries(d.attribution?.by_regime||{}).sort((a,b)=>(b[1].avg_return||0)-(a[1].avg_return||0));
     box.innerHTML='<div class="grid" style="margin-top:10px">'+
       '<div class="card"><div class="label">Strategy Return</div><div class="value '+(m.total_return>=0?'positive':'negative')+'">'+pct(m.total_return)+'</div></div>'+
       '<div class="card"><div class="label">SPY Return</div><div class="value">'+pct(m.spy_return)+'</div></div>'+
@@ -418,7 +420,9 @@ async function runBacktest(){
       '<div class="card"><div class="label">Max Drawdown</div><div class="value negative">'+pct(m.max_drawdown)+'</div></div>'+
       '<div class="card"><div class="label">Sharpe</div><div class="value">'+Number(m.sharpe||0).toFixed(2)+'</div></div>'+
     '</div>'+
-    '<div class="muted tiny" style="margin-top:12px">'+esc(d.period.start)+' → '+esc(d.period.end)+' · '+m.trades+' trades · profit factor '+Number(m.profit_factor||0).toFixed(2)+' · '+esc(d.warning)+'</div>';
+    '<div class="muted tiny" style="margin-top:12px">'+esc(d.period.start)+' → '+esc(d.period.end)+' · '+m.trades+' trades · profit factor '+Number(m.profit_factor||0).toFixed(2)+' · '+esc(d.warning)+'</div>'+
+    (setupRows.length?'<div style="margin-top:14px"><div class="label">Setup Attribution</div><div class="tablewrap"><table><thead><tr><th>Setup</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th><th>P/L</th></tr></thead><tbody>'+setupRows.map(([name,s])=>'<tr><td><strong>'+esc(name)+'</strong></td><td>'+s.trades+'</td><td>'+pct(s.win_rate)+'</td><td class="'+((s.avg_return||0)>=0?'positive':'negative')+'">'+pct(s.avg_return)+'</td><td class="'+((s.pnl||0)>=0?'positive':'negative')+'">'+money(s.pnl)+'</td></tr>').join('')+'</tbody></table></div></div>':'')+
+    (regimeRows.length?'<div style="margin-top:14px"><div class="label">Regime Attribution</div><div class="tablewrap"><table><thead><tr><th>Regime</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th><th>P/L</th></tr></thead><tbody>'+regimeRows.map(([name,s])=>'<tr><td><strong>'+esc(name)+'</strong></td><td>'+s.trades+'</td><td>'+pct(s.win_rate)+'</td><td class="'+((s.avg_return||0)>=0?'positive':'negative')+'">'+pct(s.avg_return)+'</td><td class="'+((s.pnl||0)>=0?'positive':'negative')+'">'+money(s.pnl)+'</td></tr>').join('')+'</tbody></table></div></div>':'');
   }catch(e){box.className='error';box.textContent=e.message||'Backtest failed'}
   finally{btn.disabled=false}
 }
