@@ -1,3 +1,4 @@
+import { requireDashboardAuth } from '../lib/auth.js';
 function std(values) {
   if (!values.length) return 0;
   const mean = values.reduce((a,b)=>a+b,0)/values.length;
@@ -5,6 +6,7 @@ function std(values) {
 }
 
 export default async function handler(req,res){
+  if (!requireDashboardAuth(req, res)) return;
   if(req.method!=='GET') return res.status(405).json({error:'Method not allowed'});
 
   const key=process.env.ALPACA_API_KEY;
