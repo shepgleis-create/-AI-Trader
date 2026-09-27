@@ -7,7 +7,7 @@ async function getAsset(symbol, baseUrl, headers) {
   return r.ok ? data : null;
 }
 
-async function getLatestPrice(symbol, key, secret) {
+async function getExecutionSnapshot(symbol, key, secret) {
   const url = new URL('https://data.alpaca.markets/v2/stocks/snapshots');
   url.searchParams.set('symbols', symbol);
   url.searchParams.set('feed', 'iex');
@@ -19,8 +19,26 @@ async function getLatestPrice(symbol, key, secret) {
   });
   const data = await r.json();
   if (!r.ok) return null;
+
   const s = data?.snapshots?.[symbol] || data?.[symbol];
-  return Number(s?.latestTrade?.p || s?.minuteBar?.c || s?.dailyBar?.c || 0) || null;
+  if (!s) return null;
+
+  const quote = s?.latestQuote || s?.latest_quote;
+  const trade = s?.latestTrade || s?.latest_trade;
+  const minute = s?.minuteBar || s?.minute_bar;
+  const daily = s?.dailyBar || s?.daily_bar;
+
+  const price = Number(trade?.p || minute?.c || daily?.c || 0) || null;
+  const bid = Number(quote?.bp || 0);
+  const ask = Number(quote?.ap || 0);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+  const spreadPct = mid > 0 && ask >= bid ? (ask - bid) / mid : null;
+  const timestamp = quote?.t || trade?.t || minute?.t || daily?.t || null;
+  const ageSeconds = timestamp
+    ? Math.max(0, (Date.now() - new Date(timestamp).getTime()) / 1000)
+    : null;
+
+  return { price, bid, ask, spread_pct: spreadPct, age_seconds: ageSeconds };
 }
 
 export default async function handler(req, res) {
@@ -98,9 +116,16 @@ export default async function handler(req, res) {
       return res.status(409).json({ error: `An open order already exists for ${symbol}.` });
     }
 
-    const price = await getLatestPrice(symbol, key, secret);
-    if (!(price > 0)) return res.status(502).json({ error: 'Could not get a current reference price.' });
+    const execution = await getExecutionSnapshot(symbol, key, secret);
+    if (!execution?.price) return res.status(502).json({ error: 'Could not get a current execution snapshot.' });
+    if (execution.spread_pct == null || execution.spread_pct > 0.005) {
+      return res.status(409).json({ error: 'Execution blocked because the current bid/ask spread is unavailable or wider than 0.50%.' });
+    }
+    if (execution.age_seconds != null && execution.age_seconds > 300) {
+      return res.status(409).json({ error: 'Execution blocked because the current quote is older than 5 minutes.' });
+    }
 
+    const price = execution.ask > 0 ? execution.ask : execution.price;
     const notional = Math.max(1, Math.min(25, Number(account.portfolio_value || 0) * 0.02, Number(account.cash || 0)));
     let qty;
 
@@ -146,6 +171,8 @@ export default async function handler(req, res) {
       qty,
       approximate_notional: qty * price,
       reference_price: price,
+      execution_spread_pct: execution.spread_pct,
+      execution_quote_age_seconds: execution.age_seconds,
       stop_price: Number(stopPrice),
       take_profit_price: Number(takeProfitPrice),
       order_id: order.id,
