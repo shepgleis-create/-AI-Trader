@@ -15,6 +15,20 @@ function priceRound(n) {
   return Number(n).toFixed(2);
 }
 
+async function alpacaFetch(url, options = {}, attempts = 3) {
+  let last = null;
+  for (let i = 0; i < attempts; i++) {
+    last = await fetch(url, options);
+    if (last.status !== 429 && last.status < 500) return last;
+    if (i < attempts - 1) {
+      const retryAfter = Number(last.headers.get('retry-after') || 0);
+      const wait = retryAfter > 0 ? retryAfter * 1000 : 350 * (i + 1);
+      await new Promise(resolve => setTimeout(resolve, wait));
+    }
+  }
+  return last;
+}
+
 function isOpenOrderStatus(status) {
   return ['accepted','new','partially_filled','calculated','pending_new','pending_cancel','accepted_for_bidding']
     .includes(String(status || '').toLowerCase());
@@ -114,12 +128,12 @@ export default async function handler(req, res) {
     historyUrl.searchParams.set('timeframe','1D');
 
     const [accountRes, clockRes, positionsRes, ordersRes, recentOrdersRes, historyRes] = await Promise.all([
-      fetch(`${baseUrl}/v2/account`, { headers }),
-      fetch(`${baseUrl}/v2/clock`, { headers }),
-      fetch(`${baseUrl}/v2/positions`, { headers }),
-      fetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers }),
-      fetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers }),
-      fetch(historyUrl, { headers })
+      alpacaFetch(`${baseUrl}/v2/account`, { headers }),
+      alpacaFetch(`${baseUrl}/v2/clock`, { headers }),
+      alpacaFetch(`${baseUrl}/v2/positions`, { headers }),
+      alpacaFetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers }),
+      alpacaFetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers }),
+      alpacaFetch(historyUrl, { headers })
     ]);
 
     const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw, historyRaw] = await Promise.all([
