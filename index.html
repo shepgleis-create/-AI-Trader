@@ -26,6 +26,9 @@ table{width:100%;border-collapse:collapse;min-width:650px;margin-top:8px}
 th,td{text-align:left;padding:10px 7px;border-bottom:1px solid #252d39;font-size:13px;white-space:nowrap}
 th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #323c4b;border-radius:999px;padding:3px 7px;font-size:11px}
 .kv{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid #252d39}.kv:last-child{border-bottom:0}
+.benchchart{width:100%;height:220px;margin-top:12px;background:#0c1118;border:1px solid #252d39;border-radius:14px;overflow:hidden}
+.benchlegend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:#9aa5b4}
+.legenddot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
 @media(max-width:680px){
  body{padding:12px}.wrap{margin-top:12px}.grid{grid-template-columns:1fr 1fr}.span2{grid-column:1/-1}
  .wide{grid-column:1/-1}.value{font-size:20px}.card{padding:15px}
@@ -133,6 +136,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
       <p class="muted">Compares AI Trader against passive alternatives over the exact same overlapping daily dates. Includes raw return and risk-adjusted metrics.</p>
       <button id="benchmarkLab">Run Benchmark Lab</button>
       <div id="benchmarkLabOut" class="empty">No benchmark comparison loaded yet.</div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Research Evidence Gate</div>
+      <p class="muted">Fixed research requirements for judging whether the strategy is producing enough evidence to justify further escalation. This does not enable live trading.</p>
+      <button id="evidenceGate">Evaluate Research Evidence</button>
+      <div id="evidenceGateOut" class="empty">No evidence review run yet.</div>
     </div>
 
     <div class="card wide">
@@ -529,6 +539,32 @@ async function loadPerformance(){
   finally{btn.disabled=false}
 }
 
+function benchmarkSvg(series){
+  const keys=['AI_TRADER','SPY','VTI','SIXTY_FORTY'];
+  const labels={AI_TRADER:'AI Trader',SPY:'SPY',VTI:'VTI',SIXTY_FORTY:'60/40'};
+  const colors={AI_TRADER:'#57d58e',SPY:'#66a3ff',VTI:'#d79cff',SIXTY_FORTY:'#f4c45e'};
+  const all=keys.flatMap(k=>(series?.[k]||[]).map(x=>Number(x.value))).filter(Number.isFinite);
+  if(all.length<2)return '';
+  const min=Math.min(...all),max=Math.max(...all),span=Math.max(1,max-min);
+  const w=900,h=220,pad=18;
+  const lines=keys.map(k=>{
+    const rows=series?.[k]||[];
+    if(rows.length<2)return '';
+    const pts=rows.map((x,i)=>{
+      const px=pad+(i/Math.max(1,rows.length-1))*(w-pad*2);
+      const py=h-pad-((Number(x.value)-min)/span)*(h-pad*2);
+      return px.toFixed(1)+','+py.toFixed(1);
+    }).join(' ');
+    return '<polyline fill="none" stroke="'+colors[k]+'" stroke-width="'+(k==='AI_TRADER'?3:2)+'" points="'+pts+'" />';
+  }).join('');
+  return '<svg class="benchchart" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">'+
+    '<line x1="'+pad+'" y1="'+(h-pad)+'" x2="'+(w-pad)+'" y2="'+(h-pad)+'" stroke="#27313d" />'+
+    '<line x1="'+pad+'" y1="'+pad+'" x2="'+(w-pad)+'" y2="'+pad+'" stroke="#1c2430" />'+
+    lines+
+    '</svg>'+
+    '<div class="benchlegend">'+keys.map(k=>'<span><i class="legenddot" style="background:'+colors[k]+'"></i>'+labels[k]+'</span>').join('')+'</div>';
+}
+
 async function runBenchmarkLab(){
   const btn=document.getElementById('benchmarkLab'),box=document.getElementById('benchmarkLabOut');
   btn.disabled=true;box.className='empty';box.textContent='Aligning bot history with passive benchmarks…';
@@ -566,10 +602,66 @@ async function runBenchmarkLab(){
         '<div class="card"><div class="label">Excess vs VTI</div><div class="value '+((d.excess_return?.vs_vti||0)>=0?'positive':'negative')+'">'+pct(d.excess_return?.vs_vti||0)+'</div></div>'+
         '<div class="card"><div class="label">Excess vs 60/40</div><div class="value '+((d.excess_return?.vs_60_40||0)>=0?'positive':'negative')+'">'+pct(d.excess_return?.vs_60_40||0)+'</div></div>'+
       '</div>'+
-      '<div class="muted tiny" style="margin-top:10px">'+esc(d.methodology?.note||'')+' · 60/40 benchmark: '+esc(d.methodology?.sixty_forty||'')+'</div>';
+      benchmarkSvg(d.series||{})+
+      '<div class="muted tiny" style="margin-top:10px">Bot return source: '+esc(d.methodology?.bot_return_source||'unknown')+' · '+esc(d.methodology?.note||'')+' · 60/40 benchmark: '+esc(d.methodology?.sixty_forty||'')+'</div>';
   }catch(e){
     box.className='error';
     box.textContent=e.message||'Benchmark Lab failed';
+  }finally{btn.disabled=false}
+}
+
+async function runEvidenceGate(){
+  const btn=document.getElementById('evidenceGate'),box=document.getElementById('evidenceGateOut');
+  btn.disabled=true;box.className='empty';box.textContent='Reviewing trade sample, benchmark performance, risk and execution quality…';
+  try{
+    const [sRes,bRes]=await Promise.all([
+      apiFetch('/api/strategy-stats',{cache:'no-store'}),
+      apiFetch('/api/benchmark-lab',{cache:'no-store'})
+    ]);
+    const [s,b]=await Promise.all([sRes.json(),bRes.json()]);
+    if(!sRes.ok)throw new Error(s.error||'Strategy stats failed');
+    if(!bRes.ok)throw new Error(b.error||'Benchmark Lab failed');
+
+    if(!b.ready){
+      box.className='empty';
+      box.textContent=b.note||'Not enough benchmark history yet.';
+      return;
+    }
+
+    const total=s.total||{};
+    const bot=b.rows?.AI_TRADER||{};
+    const spy=b.rows?.SPY||{};
+    const avgSlip=total.avg_entry_slippage;
+
+    const tests=[
+      {name:'Closed autonomous trades',pass:Number(total.closed_trades||0)>=50,value:Number(total.closed_trades||0)+' / 50 minimum'},
+      {name:'Profit factor',pass:Number(total.profit_factor||0)>=1.15,value:Number(total.profit_factor||0).toFixed(2)+' / 1.15 minimum'},
+      {name:'Excess return vs SPY',pass:Number(b.excess_return?.vs_spy||0)>0,value:pct(b.excess_return?.vs_spy||0)},
+      {name:'Risk-adjusted return vs SPY',pass:Number(bot.sharpe||0)>Number(spy.sharpe||0),value:Number(bot.sharpe||0).toFixed(2)+' vs '+Number(spy.sharpe||0).toFixed(2)+' Sharpe'},
+      {name:'Maximum drawdown',pass:Number(bot.max_drawdown||0)>=-0.05,value:pct(bot.max_drawdown||0)+' / -5.00% floor'},
+      {name:'Observed entry slippage',pass:avgSlip==null||Math.abs(Number(avgSlip))<=0.003,value:avgSlip==null?'Not enough fills':pct(avgSlip)+' / ±0.30% limit'},
+      {name:'Benchmark sample length',pass:Number(b.period?.trading_days||0)>=20,value:Number(b.period?.trading_days||0)+' / 20 trading days'}
+    ];
+
+    const passed=tests.filter(x=>x.pass).length;
+    const allPass=passed===tests.length;
+    const enoughSample=Number(total.closed_trades||0)>=50&&Number(b.period?.trading_days||0)>=20;
+
+    let state='NOT ENOUGH EVIDENCE';
+    let klass='warning';
+    if(enoughSample&&allPass){state='RESEARCH GATE PASSED';klass='positive'}
+    else if(enoughSample){state='RESEARCH GATE NOT PASSED';klass='negative'}
+
+    box.className='';
+    box.innerHTML=
+      '<div class="'+klass+'" style="font-size:20px;font-weight:850;margin-top:8px">'+state+'</div>'+
+      '<div class="muted tiny" style="margin-top:5px">'+passed+' of '+tests.length+' current research requirements pass. Passing this gate still does not prove future profitability or automatically enable real-money trading.</div>'+
+      '<div style="margin-top:10px">'+tests.map(t=>
+        '<div class="kv"><span class="muted">'+esc(t.name)+'</span><strong class="'+(t.pass?'positive':'negative')+'">'+(t.pass?'PASS':'WAIT / FAIL')+' · '+esc(t.value)+'</strong></div>'
+      ).join('')+'</div>';
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Evidence review failed';
   }finally{btn.disabled=false}
 }
 
@@ -681,6 +773,7 @@ document.getElementById('alpacaDiag').addEventListener('click',runAlpacaDiagnost
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
 document.getElementById('performance').addEventListener('click',loadPerformance);
 document.getElementById('benchmarkLab').addEventListener('click',runBenchmarkLab);
+document.getElementById('evidenceGate').addEventListener('click',runEvidenceGate);
 document.getElementById('intradaybacktest').addEventListener('click',runIntradayBacktest);
 document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('emergency').addEventListener('click',emergencyClose);
