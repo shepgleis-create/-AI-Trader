@@ -1,18 +1,20 @@
 import { requireDashboardAuth } from '../lib/auth.js';
 function parseClientId(id) {
   const s = String(id || '');
-  const m = s.match(/^aitr-(g|q)-(.+)-s(\d+)-c(\d+)-/);
+  const m = s.match(/^aitr-(g|q)-(.+)-s(\d+)-c(\d+)(?:-p(\d+))?-/);
   if (!m) {
     return {
       source: s.startsWith('aitest-') ? 'MANUAL_TEST' : null,
       scanner_score: null,
-      model_conviction: null
+      model_conviction: null,
+      reference_price: null
     };
   }
   return {
     source: m[1] === 'g' ? 'GEMINI' : 'QUANT_FALLBACK',
     scanner_score: Number(m[3]),
-    model_conviction: Number(m[4])
+    model_conviction: Number(m[4]),
+    reference_price: m[5] ? Number(m[5]) / 100 : null
   };
 }
 
@@ -58,6 +60,10 @@ export default async function handler(req, res) {
         source: meta.source,
         scanner_score: meta.scanner_score,
         model_conviction: meta.model_conviction,
+        reference_price: meta.reference_price,
+        entry_slippage_pct: meta.reference_price && o.filled_avg_price
+          ? (Number(o.filled_avg_price) / meta.reference_price) - 1
+          : null,
         protection_legs: Array.isArray(o.legs)
           ? o.legs.map(l => ({
               side: l.side,
