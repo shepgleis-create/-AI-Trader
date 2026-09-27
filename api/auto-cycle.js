@@ -37,13 +37,13 @@ function marketEntryWindow(clock) {
   const minutesToClose = nextClose > 0 ? (nextClose - now.getTime()) / 60000 : null;
 
   if (minutes < firstAllowed) {
-    return { allowed: false, phase: 'OPENING_NOISE', reason: 'Avoiding the first 15 minutes after the opening bell' };
+    return { allowed: false, phase: 'OPENING_NOISE', reason: 'Avoiding the first 15 minutes after the opening bell', minutes_to_close: minutesToClose };
   }
   if (minutesToClose != null && minutesToClose <= 15) {
-    return { allowed: false, phase: 'CLOSING_NOISE', reason: 'Avoiding new entries in the final 15 minutes' };
+    return { allowed: false, phase: 'CLOSING_NOISE', reason: 'Avoiding new entries in the final 15 minutes', minutes_to_close: minutesToClose };
   }
 
-  return { allowed: true, phase: 'NORMAL', reason: null };
+  return { allowed: true, phase: 'NORMAL', reason: null, minutes_to_close: minutesToClose };
 }
 
 async function latestExecutionSnapshot(symbol, key, secret) {
@@ -267,6 +267,51 @@ export default async function handler(req, res) {
         replacement_order_id: patched?.id || null,
         error: patchRes.ok ? null : patched?.message || 'Stop replacement rejected'
       });
+    }
+
+    if (entryWindow.phase === 'CLOSING_NOISE') {
+      const autonomousSymbols = new Set(autonomousParents.map(o => o.symbol).filter(Boolean));
+
+      for (const p of positions) {
+        if (!autonomousSymbols.has(p.symbol)) continue;
+
+        if (!enabled) {
+          actions.push({
+            type: 'end_of_day_flatten_dry_run',
+            symbol: p.symbol,
+            reason: 'Fractional DAY protection is not relied on overnight during calibration'
+          });
+          continue;
+        }
+
+        const symbolOrders = openOrders.filter(o => o.symbol === p.symbol && o?.id);
+        for (const o of symbolOrders) {
+          await fetch(`${baseUrl}/v2/orders/${encodeURIComponent(o.id)}`, {
+            method: 'DELETE',
+            headers
+          }).catch(() => null);
+        }
+
+        const closeRes = await fetch(`${baseUrl}/v2/positions/${encodeURIComponent(p.symbol)}`, {
+          method: 'DELETE',
+          headers
+        });
+        const closeData = await closeRes.json().catch(() => ({}));
+
+        logTraderEvent('end_of_day_flatten', {
+          symbol: p.symbol,
+          submitted: closeRes.ok,
+          order_id: closeData?.id || null
+        });
+
+        actions.push({
+          type: 'end_of_day_flatten',
+          symbol: p.symbol,
+          submitted: closeRes.ok,
+          order_id: closeData?.id || null,
+          error: closeRes.ok ? null : closeData?.message || 'Close rejected'
+        });
+      }
     }
 
     if (!entryWindow.allowed) {
