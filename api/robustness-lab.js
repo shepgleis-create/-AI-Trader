@@ -1,9 +1,13 @@
 import { requireDashboardAuth } from '../lib/auth.js';
-import { fetchMarketScan, fetchBarsForSymbols, analyze, detectMarketRegime } from '../lib/strategy.js';
+import { fetchBarsForSymbols, analyze, detectMarketRegime } from '../lib/strategy.js';
 import { entryThresholdForRegime } from '../lib/risk.js';
 
 const STARTING_CAPITAL=10000;
-const UNIVERSE_SIZE=30;
+const UNIVERSE_SIZE=20;
+const FALLBACK_UNIVERSE=[
+  'SPY','QQQ','IWM','DIA','XLK','XLF','XLE','XLV','XLI','XLY',
+  'AAPL','MSFT','NVDA','AMZN','META','GOOGL','JPM','XOM','LLY','COST'
+];
 const MAX_POSITIONS=3;
 const ALLOCATION_PCT=0.10;
 const SLIPPAGE=0.0005;
@@ -192,7 +196,7 @@ function simulate({
 
 export default async function handler(req,res){
   if(!requireDashboardAuth(req,res))return;
-  if(req.method!=='GET')return res.status(405).json({error:'Method not allowed'});
+  if(!['GET','POST'].includes(req.method))return res.status(405).json({error:'Method not allowed'});
 
   const key=process.env.ALPACA_API_KEY;
   const secret=process.env.ALPACA_SECRET_KEY;
@@ -204,9 +208,12 @@ export default async function handler(req,res){
   }
 
   try{
-    const scan=await fetchMarketScan(key,secret);
-    const symbols=scan.candidates.slice(0,UNIVERSE_SIZE).map(c=>c.symbol);
-    const barsBySymbol=await fetchBarsForSymbols([...new Set([...symbols,'SPY'])],key,secret,470);
+    const requested=Array.isArray(req.body?.symbols)
+      ?req.body.symbols.map(x=>String(x||'').trim().toUpperCase()).filter(x=>/^[A-Z.]{1,12}$/.test(x))
+      :[];
+    const symbols=[...new Set((requested.length?requested:FALLBACK_UNIVERSE).slice(0,UNIVERSE_SIZE))];
+    const universeSource=requested.length?'loaded_market_scan':'diversified_fallback';
+    const barsBySymbol=await fetchBarsForSymbols([...new Set([...symbols,'SPY'])],key,secret,420);
     const spyBars=barsBySymbol.SPY||[];
 
     if(spyBars.length<220){
@@ -265,10 +272,13 @@ export default async function handler(req,res){
 
     return res.status(200).json({
       label:'Out-of-sample robustness lab',
-      warning:'Uses today’s liquid universe, so survivorship/selection bias remains. Gemini, headlines, spreads and intraday confirmation are not replayed. This is a robustness screen, not proof of future returns.',
+      warning:'Uses either the dashboard’s loaded scan symbols or a fixed diversified liquid fallback universe. Survivorship/selection bias remains; Gemini, headlines, spreads and intraday confirmation are not replayed. This is a robustness screen, not proof of future returns.',
       universe:{
-        market_universe:scan.universe_size,
-        symbols:symbols.length
+        source:universeSource,
+        symbols:symbols.length,
+        note:universeSource==='loaded_market_scan'
+          ?'Reused symbols from the dashboard market scan to avoid duplicate full-market API bursts.'
+          :'Used a fixed diversified liquid research universe because no dashboard scan symbols were supplied.'
       },
       split:{
         train_start:dateKey(spyBars[windowStart]),
