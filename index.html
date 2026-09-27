@@ -88,6 +88,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Automation Cycle</div>
+      <p class="muted">Runs the exact same autonomous cycle used by Vercel Cron. While AUTO_TRADING_ENABLED=false it remains a dry run and will not submit a new automated order.</p>
+      <button id="runcycle">Run Automation Cycle Now</button>
+      <div id="cycleout" class="empty">No manual cycle run yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Gemini Decision + Hard Risk Gate</div>
       <p class="muted">Gemini reviews the market-wide shortlist plus regime, headlines, corporate events, portfolio state, and risk. Gemini can say BUY, but the deterministic risk engine can still veto it.</p>
       <button id="aianalyze">Run Decision Analysis</button>
@@ -141,6 +148,8 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
       <div class="kv"><span class="muted">Max gross exposure</span><strong>30%</strong></div>
       <div class="kv"><span class="muted">Max positions</span><strong>3</strong></div>
       <div class="kv"><span class="muted">Calibration entry cap</span><strong>$25</strong></div>
+      <div class="kv"><span class="muted">Autonomous entries/day</span><strong>1</strong></div>
+      <div class="kv"><span class="muted">Same-symbol cooldown</span><strong>5 days</strong></div>
       <div class="kv"><span class="muted">New-entry protection</span><strong>Broker-side bracket stop + target</strong></div>
     </div>
   </section>
@@ -275,6 +284,23 @@ async function paperBuy(){
     await load();await loadHistory();
   }catch(e){out.className='error';out.textContent=e.message||'Paper order failed'}
   finally{updatePaperButton()}
+}
+
+async function runAutomationCycle(){
+  const btn=document.getElementById('runcycle'),box=document.getElementById('cycleout');
+  btn.disabled=true;box.className='empty';box.textContent='Running autonomous cycle…';
+  try{
+    const r=await apiFetch('/api/auto-cycle',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Automation cycle failed');
+    const actions=d.actions||[];
+    box.className='';
+    box.innerHTML='<div class="muted tiny">Mode: '+esc(d.mode||'PAPER')+' · execution: '+(d.enabled?'<span class="positive">ENABLED</span>':'<span class="warning">DRY RUN</span>')+(d.regime?.label?' · regime: <strong>'+esc(d.regime.label)+'</strong>':'')+'</div>'+
+      (actions.length
+        ? '<div style="margin-top:8px">'+actions.map(a=>'<div class="kv"><span class="muted">'+esc(a.type||'action')+(a.symbol?' · '+esc(a.symbol):'')+'</span><strong>'+esc(a.reason||a.action||a.status||(a.approved===true?'APPROVED':a.approved===false?'REJECTED':'OK'))+'</strong></div>').join('')+'</div>'
+        : '<div class="muted" style="margin-top:8px">No trade action this cycle.</div>');
+  }catch(e){box.className='error';box.textContent=e.message||'Automation cycle failed'}
+  finally{btn.disabled=false}
 }
 
 async function runAiAnalysis(){
@@ -435,6 +461,7 @@ async function loadHistory(){
 
 document.getElementById('refresh').addEventListener('click',async()=>{await load();await loadHistory()});
 document.getElementById('scan').addEventListener('click',runScan);
+document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('preflight').addEventListener('click',runPreflight);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
