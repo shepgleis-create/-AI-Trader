@@ -6,6 +6,8 @@ import { logTraderEvent } from '../lib/journal.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getIntradayConfirmation } from '../lib/intraday.js';
+import { candidateReadiness } from '../lib/readiness.js';
+import { newDecisionCycleId, saveDecisionMemory } from '../lib/decision-memory.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
@@ -548,6 +550,7 @@ export default async function handler(req, res) {
     }
 
     const scan = await fetchMarketScan(key, secret);
+    const cycleId = newDecisionCycleId('auto');
     const entryThreshold = entryThresholdForRegime(scan.regime?.label);
     const held = new Set(positions.map(p => p.symbol));
     const ordered = new Set(openOrders.map(o => o.symbol));
@@ -562,7 +565,34 @@ export default async function handler(req, res) {
       .slice(0, 5);
 
     if (!eligible.length) {
-      logTraderEvent('no_setup', { regime: scan.regime?.label, threshold: entryThreshold, enabled });
+      const observed = scan.candidates.slice(0, 5);
+      const readinessBySymbol = Object.fromEntries(
+        observed.map(c => [c.symbol, candidateReadiness(c, scan.regime, {})])
+      );
+      const noSetupDecision = {
+        action: 'SKIP',
+        symbol: '',
+        confidence: 100,
+        rationale: 'No candidate met the regime-adjusted review threshold.'
+      };
+      const memory = await saveDecisionMemory({
+        cycle_id: cycleId,
+        origin: 'auto_cycle',
+        mode: 'PAPER',
+        execution_enabled: enabled,
+        source: 'SYSTEM',
+        model: 'scanner',
+        decision: noSetupDecision,
+        stage: 'NO_SETUP',
+        regime: scan.regime,
+        account_risk: accountRisk,
+        portfolio_risk: portfolioRisk,
+        meta: { threshold: entryThreshold, market_phase: entryWindow.phase },
+        candidates: observed,
+        readiness_by_symbol: readinessBySymbol
+      });
+
+      logTraderEvent('no_setup', { regime: scan.regime?.label, threshold: entryThreshold, enabled, memory_saved: memory.saved });
       actions.push({
         type: 'no_setup',
         reason: 'No candidate met the regime-adjusted review threshold',
@@ -575,11 +605,15 @@ export default async function handler(req, res) {
         enabled,
         regime: scan.regime,
         portfolio_risk: portfolioRisk,
+        memory,
         actions
       });
     }
 
     const candidateContext = await buildCandidateContext(eligible, key, secret);
+    const readinessBySymbol = Object.fromEntries(
+      eligible.map(c => [c.symbol, candidateReadiness(c, scan.regime, candidateContext[c.symbol])])
+    );
 
     let decision = null;
     let source = 'QUANT_FALLBACK';
@@ -638,8 +672,34 @@ export default async function handler(req, res) {
       });
     }
 
+    const persistDecision = async (stage, extra = {}) => saveDecisionMemory({
+      cycle_id: cycleId,
+      origin: 'auto_cycle',
+      mode: 'PAPER',
+      execution_enabled: enabled,
+      source,
+      model: source === 'LLM' ? decision?.model : 'quant-fallback-v2',
+      decision,
+      stage,
+      regime: scan.regime,
+      account_risk: accountRisk,
+      portfolio_risk: portfolioRisk,
+      risk: extra.risk || null,
+      intraday: extra.intraday || null,
+      execution: extra.execution || null,
+      meta: {
+        threshold: entryThreshold,
+        market_phase: entryWindow.phase,
+        ...extra.meta
+      },
+      candidates: eligible,
+      candidate_context: candidateContext,
+      readiness_by_symbol: readinessBySymbol
+    });
+
     if (decision.action !== 'BUY') {
-      logTraderEvent('skip', { source, reason: decision.rationale, regime: scan.regime?.label, enabled });
+      const memory = await persistDecision('MODEL_SKIP');
+      logTraderEvent('skip', { source, reason: decision.rationale, regime: scan.regime?.label, enabled, memory_saved: memory.saved });
       actions.push({ type: 'skip', reason: decision.rationale });
       return res.status(200).json({
         ok: true,
@@ -647,14 +707,16 @@ export default async function handler(req, res) {
         enabled,
         regime: scan.regime,
         portfolio_risk: portfolioRisk,
+        memory,
         actions
       });
     }
 
     const pick = eligible.find(c => c.symbol === decision.symbol);
     if (!pick) {
+      const memory = await persistDecision('INVALID_SELECTION');
       actions.push({ type: 'risk_reject', reason: 'Selected symbol was not in eligible shortlist' });
-      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
+      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, memory, actions });
     }
 
     let portfolioCorrelation = null;
@@ -714,21 +776,24 @@ export default async function handler(req, res) {
     });
 
     if (!risk.approved) {
-      logTraderEvent('risk_reject', { symbol: pick.symbol, reasons: risk.reasons, enabled });
+      const memory = await persistDecision('RISK_REJECTED', { risk });
+      logTraderEvent('risk_reject', { symbol: pick.symbol, reasons: risk.reasons, enabled, memory_saved: memory.saved });
       return res.status(200).json({
         ok: true,
         mode: 'PAPER',
         enabled,
         regime: scan.regime,
         portfolio_risk: portfolioRisk,
+        memory,
         actions
       });
     }
 
     const execution = await latestExecutionSnapshot(pick.symbol, key, secret);
     if (!execution?.price) {
+      const memory = await persistDecision('EXECUTION_DATA_REJECTED', { risk, execution });
       actions.push({ type: 'risk_reject', reason: 'Could not obtain a fresh execution snapshot' });
-      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
+      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, memory, actions });
     }
     if (execution.spread_pct == null || execution.spread_pct > 0.005) {
       const reason = execution.spread_pct == null
@@ -736,13 +801,15 @@ export default async function handler(req, res) {
         : 'Final bid/ask spread exceeded 0.50%';
       logTraderEvent('risk_reject', { symbol: pick.symbol, reason, execution, enabled });
       actions.push({ type: 'risk_reject', symbol: pick.symbol, reason, execution });
-      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
+      const memory = await persistDecision('EXECUTION_SPREAD_REJECTED', { risk, execution, meta: { rejection_reason: reason } });
+      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, memory, actions });
     }
     if (execution.age_seconds != null && execution.age_seconds > 300) {
       const reason = 'Final execution quote is older than 5 minutes';
       logTraderEvent('risk_reject', { symbol: pick.symbol, reason, execution, enabled });
       actions.push({ type: 'risk_reject', symbol: pick.symbol, reason, execution });
-      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
+      const memory = await persistDecision('EXECUTION_STALE_REJECTED', { risk, execution, meta: { rejection_reason: reason } });
+      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, memory, actions });
     }
 
     const intraday = await getIntradayConfirmation(pick.symbol, key, secret);
@@ -760,6 +827,12 @@ export default async function handler(req, res) {
         reason,
         intraday
       });
+      const memory = await persistDecision('INTRADAY_REJECTED', {
+        risk,
+        intraday,
+        execution,
+        meta: { rejection_reason: reason }
+      });
       return res.status(200).json({
         ok: true,
         mode: 'PAPER',
@@ -767,6 +840,7 @@ export default async function handler(req, res) {
         regime: scan.regime,
         portfolio_risk: portfolioRisk,
         account_risk: accountRisk,
+        memory,
         actions
       });
     }
@@ -776,8 +850,9 @@ export default async function handler(req, res) {
     const qty = px > 0 ? Number((sizing.notional / px).toFixed(8)) : 0;
 
     if (!(qty > 0)) {
+      const memory = await persistDecision('SIZING_REJECTED', { risk, intraday, execution });
       actions.push({ type: 'risk_reject', reason: 'Could not calculate a valid order quantity' });
-      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
+      return res.status(200).json({ ok: true, mode: 'PAPER', enabled, memory, actions });
     }
 
     const entryLimitPrice = priceRound(px * (1 + ENTRY_LIMIT_CUSHION_PCT));
@@ -805,9 +880,11 @@ export default async function handler(req, res) {
       client_order_id: clientId
     };
 
+    let memory;
     if (!enabled) {
       logTraderEvent('entry_dry_run', planned);
       actions.push(planned);
+      memory = await persistDecision('ENTRY_DRY_RUN', { risk, intraday, execution: planned });
     } else {
       const orderRes = await fetch(`${baseUrl}/v2/orders`, {
         method: 'POST',
@@ -828,12 +905,18 @@ export default async function handler(req, res) {
       const order = await orderRes.json();
 
       logTraderEvent('entry_submit', { ...planned, submitted: orderRes.ok, order_id: order?.id || null, status: order?.status || null, error: orderRes.ok ? null : order?.message || 'Bracket order rejected' });
-      actions.push({
+      const submittedAction = {
         ...planned,
         submitted: orderRes.ok,
         order_id: order?.id || null,
         status: order?.status || null,
         error: orderRes.ok ? null : order?.message || 'Bracket order rejected'
+      };
+      actions.push(submittedAction);
+      memory = await persistDecision(orderRes.ok ? 'ENTRY_SUBMITTED' : 'ORDER_REJECTED', {
+        risk,
+        intraday,
+        execution: submittedAction
       });
     }
 
@@ -845,6 +928,7 @@ export default async function handler(req, res) {
       market_phase: entryWindow.phase,
       portfolio_risk: portfolioRisk,
       account_risk: accountRisk,
+      memory,
       rules: {
         regime_entry_threshold: entryThreshold,
         daily_loss_stop_pct: -0.02,
