@@ -1,4 +1,4 @@
-import { fetchMarketScan, fetchBarsForSymbols } from '../lib/strategy.js';
+import { fetchMarketScan, fetchBarsForSymbols, marketRiskMetrics, SECTOR_ETFS } from '../lib/strategy.js';
 import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
 import { evaluateEntry, entryThresholdForRegime, getPortfolioRisk, maxPortfolioCorrelation } from '../lib/risk.js';
@@ -607,8 +607,9 @@ export default async function handler(req, res) {
     }
 
     let portfolioCorrelation = null;
+    let sectorOverlap = { candidate_sector: pick.sector_proxy || null, count: 0, symbols: [] };
     if (positions.length) {
-      const correlationSymbols = [...new Set([pick.symbol, ...positions.map(p => p.symbol)])];
+      const correlationSymbols = [...new Set([pick.symbol, ...positions.map(p => p.symbol), 'SPY', ...SECTOR_ETFS])];
       const correlationBars = await fetchBarsForSymbols(correlationSymbols, key, secret, 100);
       const heldBars = Object.fromEntries(
         positions.map(p => [p.symbol, correlationBars[p.symbol] || []])
@@ -617,6 +618,25 @@ export default async function handler(req, res) {
         correlationBars[pick.symbol] || [],
         heldBars
       );
+
+      if (pick.sector_proxy) {
+        const sameSector = positions
+          .map(p => ({
+            symbol: p.symbol,
+            metrics: marketRiskMetrics(correlationBars[p.symbol] || [], correlationBars)
+          }))
+          .filter(x =>
+            x.metrics.sector_proxy === pick.sector_proxy &&
+            Number(x.metrics.sector_correlation || 0) >= 0.55
+          )
+          .map(x => x.symbol);
+
+        sectorOverlap = {
+          candidate_sector: pick.sector_proxy,
+          count: sameSector.length,
+          symbols: sameSector
+        };
+      }
     }
 
     const risk = evaluateEntry({
@@ -626,7 +646,8 @@ export default async function handler(req, res) {
       regime: scan.regime,
       eventContext: candidateContext[pick.symbol],
       confidence: decision.confidence,
-      portfolioCorrelation
+      portfolioCorrelation,
+      sectorOverlap
     });
 
     logTraderEvent('risk_check', { symbol: pick.symbol, approved: risk.approved, reasons: risk.reasons, threshold: risk.threshold, correlation: risk.portfolio_correlation || null, enabled });
@@ -637,6 +658,7 @@ export default async function handler(req, res) {
       reasons: risk.reasons,
       threshold: risk.threshold,
       sizing: risk.sizing,
+      sector_overlap: risk.sector_overlap,
       event_risk: candidateContext[pick.symbol]?.risk || null
     });
 
