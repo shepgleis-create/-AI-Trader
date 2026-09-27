@@ -106,83 +106,121 @@ export default async function handler(req, res) {
       ).slice(0, 5);
 
       if (eligible.length) {
-        if (!openaiKey) {
-          actions.push({
-            type: 'ai_unavailable',
-            reason: 'OPENAI_API_KEY is not configured, so no automatic entry is allowed.'
-          });
-        } else {
-          const ai = await getAiTradeDecision({
-            apiKey: openaiKey,
-            candidates: eligible,
-            positions,
-            account
-          });
+        let decision = null;
+        let source = 'QUANT_FALLBACK';
 
-          actions.push({
-            type: 'ai_decision',
-            action: ai.action,
-            symbol: ai.symbol,
-            confidence: ai.confidence,
-            rationale: ai.rationale,
-            model: ai.model
-          });
-
-          const pick = ai.action === 'BUY'
-            ? eligible.find(c => c.symbol === ai.symbol)
-            : null;
-
-          // Quant/risk gate remains mandatory even after AI says BUY.
-          if (pick && pick.score >= ENTRY_SCORE && ai.confidence >= 60) {
-            const portfolioValue = Number(account.portfolio_value || 0);
-            const cash = Number(account.cash || 0);
-            const notional = Math.max(1, Math.min(MAX_ENTRY_DOLLARS, portfolioValue * 0.02));
-
-            if (cash >= notional) {
-              if (enabled) {
-                const orderRes = await fetch(`${baseUrl}/v2/orders`, {
-                  method: 'POST',
-                  headers,
-                  body: JSON.stringify({
-                    symbol: pick.symbol,
-                    notional: notional.toFixed(2),
-                    side: 'buy',
-                    type: 'market',
-                    time_in_force: 'day',
-                    client_order_id: `aiauto-${pick.symbol.toLowerCase()}-${Date.now()}`
-                  })
-                });
-                const order = await orderRes.json();
-                actions.push({
-                  type: 'entry',
-                  symbol: pick.symbol,
-                  score: pick.score,
-                  ai_confidence: ai.confidence,
-                  notional,
-                  submitted: orderRes.ok,
-                  order_id: order?.id || null,
-                  status: order?.status || null,
-                  error: orderRes.ok ? null : order?.message
-                });
-              } else {
-                actions.push({
-                  type: 'entry_dry_run',
-                  symbol: pick.symbol,
-                  score: pick.score,
-                  ai_confidence: ai.confidence,
-                  notional
-                });
-              }
-            }
-          } else if (ai.action === 'BUY' && pick) {
+        if (openaiKey) {
+          try {
+            decision = await getAiTradeDecision({
+              apiKey: openaiKey,
+              candidates: eligible,
+              positions,
+              account
+            });
+            source = 'LLM';
             actions.push({
-              type: 'risk_reject',
-              symbol: pick.symbol,
-              reason: 'AI buy did not meet the mandatory score/confidence gate.',
-              score: pick.score,
-              ai_confidence: ai.confidence
+              type: 'ai_decision',
+              action: decision.action,
+              symbol: decision.symbol,
+              confidence: decision.confidence,
+              rationale: decision.rationale,
+              model: decision.model
+            });
+          } catch (error) {
+            actions.push({
+              type: 'ai_fallback',
+              reason: String(error?.message || 'OpenAI request failed').slice(0, 220)
             });
           }
+        } else {
+          actions.push({
+            type: 'ai_fallback',
+            reason: 'OPENAI_API_KEY is not configured.'
+          });
+        }
+
+        if (!decision) {
+          const best = eligible[0];
+          decision = best && best.score >= ENTRY_SCORE
+            ? {
+                action: 'BUY',
+                symbol: best.symbol,
+                confidence: Math.min(95, Math.max(60, best.score)),
+                rationale: 'OpenAI unavailable, so the autonomous quant fallback selected the highest-scoring setup that passed the hard entry threshold.'
+              }
+            : {
+                action: 'SKIP',
+                symbol: '',
+                confidence: 80,
+                rationale: 'OpenAI unavailable and no candidate passed the hard quantitative entry threshold.'
+              };
+
+          actions.push({
+            type: 'quant_decision',
+            action: decision.action,
+            symbol: decision.symbol,
+            confidence: decision.confidence,
+            rationale: decision.rationale
+          });
+        }
+
+        const pick = decision.action === 'BUY'
+          ? eligible.find(c => c.symbol === decision.symbol)
+          : null;
+
+        // The hard quantitative/risk gate is mandatory for both LLM and fallback decisions.
+        if (pick && pick.score >= ENTRY_SCORE && decision.confidence >= 60) {
+          const portfolioValue = Number(account.portfolio_value || 0);
+          const cash = Number(account.cash || 0);
+          const notional = Math.max(1, Math.min(MAX_ENTRY_DOLLARS, portfolioValue * 0.02));
+
+          if (cash >= notional) {
+            if (enabled) {
+              const orderRes = await fetch(`${baseUrl}/v2/orders`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  symbol: pick.symbol,
+                  notional: notional.toFixed(2),
+                  side: 'buy',
+                  type: 'market',
+                  time_in_force: 'day',
+                  client_order_id: `aiauto-${pick.symbol.toLowerCase()}-${Date.now()}`
+                })
+              });
+              const order = await orderRes.json();
+              actions.push({
+                type: 'entry',
+                decision_source: source,
+                symbol: pick.symbol,
+                score: pick.score,
+                decision_confidence: decision.confidence,
+                notional,
+                submitted: orderRes.ok,
+                order_id: order?.id || null,
+                status: order?.status || null,
+                error: orderRes.ok ? null : order?.message
+              });
+            } else {
+              actions.push({
+                type: 'entry_dry_run',
+                decision_source: source,
+                symbol: pick.symbol,
+                score: pick.score,
+                decision_confidence: decision.confidence,
+                notional
+              });
+            }
+          }
+        } else if (decision.action === 'BUY' && pick) {
+          actions.push({
+            type: 'risk_reject',
+            decision_source: source,
+            symbol: pick.symbol,
+            reason: 'Decision did not meet the mandatory score/confidence gate.',
+            score: pick.score,
+            decision_confidence: decision.confidence
+          });
         }
       }
     }
