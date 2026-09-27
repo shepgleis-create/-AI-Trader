@@ -1,5 +1,7 @@
-import { fetchCandidates } from '../lib/strategy.js';
+import { fetchMarketScan } from '../lib/strategy.js';
 import { getAiTradeDecision } from '../lib/ai.js';
+import { buildCandidateContext } from '../lib/context.js';
+import { evaluateEntry, entryThresholdForRegime } from '../lib/risk.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -25,18 +27,28 @@ export default async function handler(req, res) {
       fetch(`${baseUrl}/v2/positions`, { headers })
     ]);
 
-    const [account, positions] = await Promise.all([accountRes.json(), positionsRes.json()]);
+    const [account, positionsRaw] = await Promise.all([accountRes.json(), positionsRes.json()]);
     if (!accountRes.ok || !positionsRes.ok) {
       return res.status(502).json({ error: 'Could not load Alpaca context for AI' });
     }
 
-    const candidates = await fetchCandidates(alpacaKey, alpacaSecret);
-    const eligible = candidates.filter(c => c.score >= 66).slice(0, 5);
+    const positions = Array.isArray(positionsRaw) ? positionsRaw : [];
+    const scan = await fetchMarketScan(alpacaKey, alpacaSecret);
+    const threshold = entryThresholdForRegime(scan.regime?.label);
+    const eligible = scan.candidates.filter(c => c.score >= Math.max(68, threshold - 10)).slice(0, 5);
+    const candidateContext = await buildCandidateContext(eligible, alpacaKey, alpacaSecret);
 
     if (!eligible.length) {
       return res.status(200).json({
-        model: 'gemini-3.8-flash',
-        decision: { action: 'SKIP', symbol: '', confidence: 100, rationale: 'No scanner candidates met the minimum review threshold.' },
+        source: 'QUANT_FALLBACK',
+        model: 'quant-fallback-v2',
+        regime: scan.regime,
+        decision: {
+          action: 'SKIP',
+          symbol: '',
+          confidence: 100,
+          rationale: 'No market-wide scanner candidates met the minimum review threshold.'
+        },
         candidates: []
       });
     }
@@ -50,12 +62,14 @@ export default async function handler(req, res) {
         decision = await getAiTradeDecision({
           apiKey: geminiKey,
           candidates: eligible,
-          positions: Array.isArray(positions) ? positions : [],
-          account
+          positions,
+          account,
+          marketContext: scan.regime,
+          candidateContext
         });
         source = 'LLM';
       } catch (error) {
-        llm_error = String(error?.message || 'Gemini request failed').slice(0, 300);
+        llm_error = String(error?.message || 'Gemini request failed').slice(0, 400);
       }
     } else {
       llm_error = 'GEMINI_API_KEY is not configured.';
@@ -63,27 +77,56 @@ export default async function handler(req, res) {
 
     if (!decision) {
       const best = eligible[0];
-      decision = best && best.score >= 78
+      decision = best && best.score >= threshold
         ? {
             action: 'BUY',
             symbol: best.symbol,
             confidence: Math.min(95, Math.max(60, best.score)),
-            rationale: 'Gemini is unavailable, so the quantitative fallback selected the highest-scoring candidate that passed the hard entry threshold.'
+            rationale: 'Gemini is unavailable, so the quantitative fallback selected the highest-scoring candidate that passed the regime-adjusted threshold.'
           }
         : {
             action: 'SKIP',
             symbol: '',
             confidence: 80,
-            rationale: 'Gemini is unavailable and no candidate passed the hard quantitative entry threshold.'
+            rationale: 'Gemini is unavailable and no candidate passed the regime-adjusted quantitative entry threshold.'
           };
     }
 
+    const pick = decision.action === 'BUY'
+      ? eligible.find(c => c.symbol === decision.symbol)
+      : null;
+
+    const risk = pick
+      ? evaluateEntry({
+          account,
+          positions,
+          candidate: pick,
+          regime: scan.regime,
+          eventContext: candidateContext[pick.symbol],
+          confidence: decision.confidence
+        })
+      : {
+          approved: false,
+          reasons: ['No entry selected'],
+          threshold,
+          portfolio: null,
+          sizing: null
+        };
+
     return res.status(200).json({
       source,
-      model: source === 'LLM' ? decision.model : 'quant-fallback-v1',
+      model: source === 'LLM' ? decision.model : 'quant-fallback-v2',
       llm_error,
+      regime: scan.regime,
       decision,
-      candidates: eligible.map(c => ({ symbol: c.symbol, score: c.score }))
+      risk,
+      candidates: eligible.map(c => ({
+        symbol: c.symbol,
+        score: c.score,
+        atr_pct: c.atr_pct,
+        relative_strength_20d: c.relative_strength_20d,
+        event_risk: candidateContext[c.symbol]?.risk?.level || 'LOW'
+      }))
     });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'AI analysis failed' });
