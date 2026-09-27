@@ -1,6 +1,7 @@
 import { requireDashboardAuth } from '../lib/auth.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
+import { getIntradayConfirmation } from '../lib/intraday.js';
 
 async function getAsset(symbol, baseUrl, headers) {
   const r = await fetch(`${baseUrl}/v2/assets/${encodeURIComponent(symbol)}`, { headers });
@@ -176,6 +177,14 @@ export default async function handler(req, res) {
       return res.status(409).json({ error: 'Execution blocked because the current quote is older than 5 minutes.' });
     }
 
+    const intraday = await getIntradayConfirmation(symbol, key, secret);
+    if (!intraday.approved) {
+      return res.status(409).json({
+        error: intraday.reasons?.join(' · ') || 'Intraday execution confirmation failed.',
+        intraday
+      });
+    }
+
     const price = execution.ask > 0 ? execution.ask : execution.price;
     const notional = Math.max(1, Math.min(25, Number(account.portfolio_value || 0) * 0.02, Number(account.cash || 0)));
     let qty;
@@ -224,6 +233,7 @@ export default async function handler(req, res) {
       reference_price: price,
       execution_spread_pct: execution.spread_pct,
       execution_quote_age_seconds: execution.age_seconds,
+      intraday_confirmation: intraday,
       stop_price: Number(stopPrice),
       take_profit_price: Number(takeProfitPrice),
       order_id: order.id,
