@@ -1,6 +1,8 @@
+import { requireDashboardAuth } from '../lib/auth.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 
 export default async function handler(req, res) {
+  if (!requireDashboardAuth(req, res)) return;
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
