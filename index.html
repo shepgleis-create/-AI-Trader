@@ -345,7 +345,9 @@ async function runScan(){
     box.className='';
     const leaders=(d.regime?.sector_leaders||[]).map(x=>x.symbol+' '+pct(x.return_20d)).join(' · ');
     const breadth=d.regime?.breadth||{};
+    const funnel=d.funnel||{};
     box.innerHTML='<div class="muted" style="margin-top:8px">Universe: <strong>'+d.universe_size+'</strong> · snapshots: '+(d.snapshot_count||0)+' · deep scan: '+(d.deep_scan_size||0)+' · analyzed: '+d.analyzed+' · regime: <strong>'+esc(d.regime?.label||'UNKNOWN')+'</strong></div>'+
+    '<div class="muted tiny" style="margin-top:5px">Opportunity funnel: review ≥68 <strong>'+Number(funnel.review_score_68_plus||0)+'</strong> · entry ≥'+Number(funnel.regime_threshold||0)+' <strong>'+Number(funnel.entry_score_pass||0)+'</strong> · score ≥90 <strong>'+Number(funnel.score_90_plus||0)+'</strong></div>'+
     '<div class="muted tiny" style="margin-top:5px">Breadth: <strong>'+esc(breadth.label||'UNKNOWN')+'</strong>'+(breadth.advance_ratio!=null?' · advancers '+pct(breadth.advance_ratio):'')+'</div>'+
     (leaders?'<div class="muted tiny" style="margin-top:5px">Sector leaders: '+esc(leaders)+'</div>':'')+
     '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Score</th><th>Setup</th><th>Sector</th><th>Beta</th><th>Gap</th><th>RS Rank</th><th>Spread</th><th>20D</th><th>ATR</th><th>RSI</th></tr></thead><tbody>'+
@@ -412,6 +414,9 @@ async function runAiAnalysis(){
       (risk.sizing?'<div class="muted tiny">Planned calibration size: '+money(risk.sizing.notional)+' · stop '+pct(risk.sizing.stop_pct)+' · target '+pct(risk.sizing.take_profit_pct)+'</div>':'')+
       (risk.portfolio_correlation?.correlation!=null?'<div class="muted tiny">Highest portfolio correlation: '+Number(risk.portfolio_correlation.correlation).toFixed(2)+(risk.portfolio_correlation.symbol?' vs '+esc(risk.portfolio_correlation.symbol):'')+'</div>':'')+
       (risk.reasons?.length?'<div class="warning tiny" style="margin-top:6px">'+risk.reasons.map(esc).join(' · ')+'</div>':'')+
+      (d.shadow_review?.length?'<div style="margin-top:14px"><div class="label">Shadow Trade Readiness</div><div class="muted tiny" style="margin-bottom:6px">Diagnostic only — this does not override the hard risk gate.</div><div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Readiness</th><th>Grade</th><th>Helps</th><th>Hurts</th></tr></thead><tbody>'+
+        d.shadow_review.map(s=>'<tr><td><strong>'+esc(s.symbol)+'</strong></td><td>'+Number(s.readiness?.score||0)+'/100</td><td><strong>'+esc(s.readiness?.grade||'—')+'</strong></td><td>'+esc((s.readiness?.positives||[]).slice(0,3).join(' · ')||'—')+'</td><td>'+esc((s.readiness?.negatives||[]).slice(0,3).join(' · ')||'—')+'</td></tr>').join('')+
+        '</tbody></table></div></div>':'')+
       (d.llm_error?'<div class="muted tiny" style="margin-top:6px">Gemini unavailable: '+esc(d.llm_error)+'</div>':'');
   }catch(e){box.className='error';box.textContent=e.message||'Decision analysis failed'}
   finally{btn.disabled=false}
