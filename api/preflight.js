@@ -1,4 +1,5 @@
 import { requireDashboardAuth } from '../lib/auth.js';
+import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
 export default async function handler(req,res){
   if(!requireDashboardAuth(req,res)) return;
@@ -24,16 +25,18 @@ export default async function handler(req,res){
   if(key&&secret&&checks.paper_endpoint){
     const headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret};
     try{
-      const [ar,cr]=await Promise.all([
+      const [ar,clockPack]=await Promise.all([
         fetch(`${baseUrl}/v2/account`,{headers}),
-        fetch(`${baseUrl}/v2/clock`,{headers})
+        fetchMarketClock(baseUrl,headers)
       ]);
-      const [a,c]=await Promise.all([ar.json(),cr.json()]);
+      const a=await ar.json().catch(()=>({}));
+      const clock=clockPack.data||{};
       alpaca={
-        ok:ar.ok&&cr.ok,
-        error:ar.ok&&cr.ok?null:(a?.message||c?.message||'Alpaca check failed'),
+        ok:ar.ok&&clockPack.ok,
+        error:ar.ok&&clockPack.ok?null:(!ar.ok?(a?.message||`Account HTTP ${ar.status}`):(clockPack.error||'Market clock failed')),
         status:a?.status||null,
-        market_open:Boolean(c?.is_open)
+        market_open:clockPack.ok?Boolean(clock?.is_open):null,
+        clock_source:clockPack.source||null
       };
     }catch(e){
       alpaca={ok:false,error:e?.message||'Alpaca unreachable',status:null,market_open:null};
