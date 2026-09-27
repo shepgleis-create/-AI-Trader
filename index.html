@@ -30,9 +30,23 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
  body{padding:12px}.wrap{margin-top:12px}.grid{grid-template-columns:1fr 1fr}.span2{grid-column:1/-1}
  .wide{grid-column:1/-1}.value{font-size:20px}.card{padding:15px}
 }
+#loginOverlay{position:fixed;inset:0;background:rgba(5,7,10,.96);display:flex;align-items:center;justify-content:center;padding:22px;z-index:9999}
+#loginCard{width:min(440px,100%);background:#121720;border:1px solid #2b3442;border-radius:20px;padding:22px}
+#loginCard input{width:100%;background:#0b0f15;border:1px solid #303a48;color:#fff;border-radius:13px;padding:14px 15px;font-size:16px;margin-top:12px}
+.hidden{display:none!important}
 </style>
 </head>
 <body>
+<div id="loginOverlay">
+  <div id="loginCard">
+    <div class="label">Private Dashboard</div>
+    <div class="value" style="margin-top:8px">AI Trader Login</div>
+    <p class="muted">Enter the same CRON_SECRET you already saved in Vercel. It is used only to create a secure session cookie.</p>
+    <input id="loginSecret" type="password" autocomplete="current-password" placeholder="CRON_SECRET"/>
+    <button id="loginBtn">Unlock Dashboard</button>
+    <div id="loginError" class="error"></div>
+  </div>
+</div>
 <main class="wrap">
   <div class="top">
     <div><h1>AI Trader</h1><div class="sub">Autonomous paper-trading research system</div></div>
@@ -113,6 +127,48 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
 </main>
 
 <script>
+function showLogin(message=''){
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('loginError').textContent=message;
+}
+function hideLogin(){
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('loginError').textContent='';
+}
+async function apiFetch(url,opts={}){
+  const r=await fetch(url,{...opts,credentials:'same-origin'});
+  if(r.status===401){
+    showLogin('Login required.');
+    throw new Error('Dashboard login required');
+  }
+  return r;
+}
+async function login(){
+  const btn=document.getElementById('loginBtn');
+  const secret=document.getElementById('loginSecret').value;
+  btn.disabled=true;
+  document.getElementById('loginError').textContent='';
+  try{
+    const r=await fetch('/api/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body:JSON.stringify({secret})
+    });
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Login failed');
+    document.getElementById('loginSecret').value='';
+    hideLogin();
+    await Promise.all([load(),loadHistory(),loadPerformance()]);
+  }catch(e){
+    showLogin(e.message||'Login failed');
+  }finally{
+    btn.disabled=false;
+  }
+}
+document.getElementById('loginBtn').addEventListener('click',login);
+document.getElementById('loginSecret').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+
 const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n||0));
 const pct=n=>(Number(n||0)*100).toFixed(2)+'%';
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
@@ -124,7 +180,7 @@ async function load(){
   const btn=document.getElementById('refresh'); btn.disabled=true;
   document.getElementById('error').textContent='';
   try{
-    const r=await fetch('/api/status',{cache:'no-store'}); const d=await r.json();
+    const r=await apiFetch('/api/status',{cache:'no-store'}); const d=await r.json();
     if(!r.ok) throw new Error(d.error||'Status request failed');
     document.getElementById('portfolio').textContent=money(d.account.portfolio_value);
     document.getElementById('cash').textContent=money(d.account.cash);
@@ -162,7 +218,7 @@ async function runScan(){
   const btn=document.getElementById('scan'),box=document.getElementById('scanout');
   btn.disabled=true;box.className='empty';box.textContent='Scanning the U.S. equity market…';
   try{
-    const r=await fetch('/api/scan',{cache:'no-store'});const d=await r.json();
+    const r=await apiFetch('/api/scan',{cache:'no-store'});const d=await r.json();
     if(!r.ok) throw new Error(d.error||'Scan failed');
     lastRegime=d.regime||null;
     topCandidate=d.candidates?.[0]||null;updatePaperButton();
@@ -192,7 +248,7 @@ async function paperBuy(){
   const btn=document.getElementById('paperbuy'),out=document.getElementById('paperresult');
   btn.disabled=true;out.className='muted';out.textContent='Submitting bracket-protected paper order…';
   try{
-    const r=await fetch('/api/paper-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:topCandidate.symbol,score:topCandidate.score})});
+    const r=await apiFetch('/api/paper-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:topCandidate.symbol,score:topCandidate.score})});
     const d=await r.json();if(!r.ok)throw new Error(d.error||'Paper order failed');
     out.className='positive';out.textContent=d.message+' Stop '+money(d.stop_price)+' · Target '+money(d.take_profit_price);
     await load();await loadHistory();
@@ -204,7 +260,7 @@ async function runAiAnalysis(){
   const btn=document.getElementById('aianalyze'),box=document.getElementById('aiout');
   btn.disabled=true;box.className='empty';box.textContent='Gemini + risk engine are reviewing the market-wide shortlist…';
   try{
-    const r=await fetch('/api/ai-preview',{cache:'no-store'});const d=await r.json();
+    const r=await apiFetch('/api/ai-preview',{cache:'no-store'});const d=await r.json();
     if(!r.ok)throw new Error(d.error||'Decision analysis failed');
     const x=d.decision,risk=d.risk||{};
     box.className=x.action==='BUY'?'positive':'muted';
@@ -226,7 +282,7 @@ async function loadPerformance(){
   const btn=document.getElementById('performance'),box=document.getElementById('performanceout');
   btn.disabled=true;box.className='empty';box.textContent='Loading actual paper-account performance…';
   try{
-    const r=await fetch('/api/performance',{cache:'no-store'});const d=await r.json();
+    const r=await apiFetch('/api/performance',{cache:'no-store'});const d=await r.json();
     if(!r.ok)throw new Error(d.error||'Performance request failed');
     box.className='';
     if(d.points<2){
@@ -249,7 +305,7 @@ async function runBacktest(){
   const btn=document.getElementById('backtest'),box=document.getElementById('backtestout');
   btn.disabled=true;box.className='empty';box.textContent='Running walk-forward research test… this is heavier than a normal scan.';
   try{
-    const r=await fetch('/api/backtest',{cache:'no-store'});const d=await r.json();
+    const r=await apiFetch('/api/backtest',{cache:'no-store'});const d=await r.json();
     if(!r.ok)throw new Error(d.error||'Backtest failed');
     const m=d.metrics;
     box.className='';
@@ -269,7 +325,7 @@ async function runBacktest(){
 async function loadHistory(){
   const box=document.getElementById('history');
   try{
-    const r=await fetch('/api/history',{cache:'no-store'});const d=await r.json();
+    const r=await apiFetch('/api/history',{cache:'no-store'});const d=await r.json();
     if(!r.ok)throw new Error(d.error||'Could not load journal');
     const orders=(d.orders||[]).slice(0,15);
     if(!orders.length){box.className='empty';box.textContent='No paper orders yet.';return}
@@ -287,7 +343,8 @@ document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('performance').addEventListener('click',loadPerformance);
 document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('paperbuy').addEventListener('click',paperBuy);
-load();loadHistory();loadPerformance();
+hideLogin();
+Promise.all([load(),loadHistory(),loadPerformance()]).catch(()=>{});
 </script>
 </body>
 </html>
