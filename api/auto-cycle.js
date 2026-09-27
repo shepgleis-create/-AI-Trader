@@ -4,6 +4,7 @@ import { buildCandidateContext } from '../lib/context.js';
 import { evaluateEntry, entryThresholdForRegime, getPortfolioRisk, maxPortfolioCorrelation } from '../lib/risk.js';
 import { logTraderEvent } from '../lib/journal.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
+import { buildAccountRisk } from '../lib/account-risk.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
@@ -108,19 +109,24 @@ export default async function handler(req, res) {
   };
 
   try {
-    const [accountRes, clockRes, positionsRes, ordersRes, recentOrdersRes] = await Promise.all([
+    const historyUrl = new URL(`${baseUrl}/v2/account/portfolio/history`);
+    historyUrl.searchParams.set('period','1M');
+    historyUrl.searchParams.set('timeframe','1D');
+
+    const [accountRes, clockRes, positionsRes, ordersRes, recentOrdersRes, historyRes] = await Promise.all([
       fetch(`${baseUrl}/v2/account`, { headers }),
       fetch(`${baseUrl}/v2/clock`, { headers }),
       fetch(`${baseUrl}/v2/positions`, { headers }),
       fetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers }),
-      fetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers })
+      fetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers }),
+      fetch(historyUrl, { headers })
     ]);
 
-    const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw] = await Promise.all([
-      accountRes.json(), clockRes.json(), positionsRes.json(), ordersRes.json(), recentOrdersRes.json()
+    const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw, portfolioHistory] = await Promise.all([
+      accountRes.json(), clockRes.json(), positionsRes.json(), ordersRes.json(), recentOrdersRes.json(), historyRes.json()
     ]);
 
-    if (!accountRes.ok || !clockRes.ok || !positionsRes.ok || !ordersRes.ok || !recentOrdersRes.ok) {
+    if (!accountRes.ok || !clockRes.ok || !positionsRes.ok || !ordersRes.ok || !recentOrdersRes.ok || !historyRes.ok) {
       return res.status(502).json({ error: 'Alpaca pre-trade checks failed' });
     }
 
@@ -128,6 +134,13 @@ export default async function handler(req, res) {
     const openOrders = Array.isArray(ordersRaw) ? ordersRaw : [];
     const recentOrders = Array.isArray(recentOrdersRaw) ? recentOrdersRaw : [];
     const portfolioRisk = getPortfolioRisk(account, positions);
+    const accountRisk = buildAccountRisk({
+      account,
+      positions,
+      openOrders,
+      recentOrders,
+      portfolioHistory
+    });
     const entryWindow = marketEntryWindow(clock);
 
     const today = new Date().toISOString().slice(0,10);
@@ -333,6 +346,31 @@ export default async function handler(req, res) {
         enabled,
         market_phase: entryWindow.phase,
         portfolio_risk: portfolioRisk,
+        actions
+      });
+    }
+
+    if (!accountRisk.approved) {
+      logTraderEvent('entry_lock', {
+        reason: 'account_risk',
+        locks: accountRisk.locks,
+        drawdown_pct: accountRisk.drawdown_pct,
+        trailing_week_return: accountRisk.trailing_week_return,
+        open_risk_pct: accountRisk.open_risk_pct,
+        consecutive_losses: accountRisk.consecutive_autonomous_losses,
+        enabled
+      });
+      actions.push({
+        type: 'entry_lock',
+        reason: accountRisk.locks.join(' · '),
+        account_risk: accountRisk
+      });
+      return res.status(200).json({
+        ok: true,
+        mode: 'PAPER',
+        enabled,
+        portfolio_risk: portfolioRisk,
+        account_risk: accountRisk,
         actions
       });
     }
@@ -635,6 +673,7 @@ export default async function handler(req, res) {
       regime: scan.regime,
       market_phase: entryWindow.phase,
       portfolio_risk: portfolioRisk,
+      account_risk: accountRisk,
       rules: {
         regime_entry_threshold: entryThreshold,
         daily_loss_stop_pct: -0.02,
