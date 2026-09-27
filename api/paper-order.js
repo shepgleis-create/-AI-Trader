@@ -1,5 +1,6 @@
 import { requireDashboardAuth } from '../lib/auth.js';
 import { getPortfolioRisk } from '../lib/risk.js';
+import { buildAccountRisk } from '../lib/account-risk.js';
 
 async function getAsset(symbol, baseUrl, headers) {
   const r = await fetch(`${baseUrl}/v2/assets/${encodeURIComponent(symbol)}`, { headers });
@@ -67,19 +68,25 @@ export default async function handler(req, res) {
   };
 
   try {
-    const [accountRes, clockRes, positionsRes, ordersRes, asset] = await Promise.all([
+    const historyUrl = new URL(`${baseUrl}/v2/account/portfolio/history`);
+    historyUrl.searchParams.set('period','1M');
+    historyUrl.searchParams.set('timeframe','1D');
+
+    const [accountRes, clockRes, positionsRes, ordersRes, recentOrdersRes, historyRes, asset] = await Promise.all([
       fetch(`${baseUrl}/v2/account`, { headers }),
       fetch(`${baseUrl}/v2/clock`, { headers }),
       fetch(`${baseUrl}/v2/positions`, { headers }),
       fetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers }),
+      fetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers }),
+      fetch(historyUrl, { headers }),
       getAsset(symbol, baseUrl, headers)
     ]);
 
-    const [account, clock, positionsRaw, ordersRaw] = await Promise.all([
-      accountRes.json(), clockRes.json(), positionsRes.json(), ordersRes.json()
+    const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw, portfolioHistory] = await Promise.all([
+      accountRes.json(), clockRes.json(), positionsRes.json(), ordersRes.json(), recentOrdersRes.json(), historyRes.json()
     ]);
 
-    if (!accountRes.ok || !clockRes.ok || !positionsRes.ok || !ordersRes.ok) {
+    if (!accountRes.ok || !clockRes.ok || !positionsRes.ok || !ordersRes.ok || !recentOrdersRes.ok || !historyRes.ok) {
       return res.status(502).json({ error: 'Could not complete pre-trade safety checks.' });
     }
 
@@ -100,7 +107,22 @@ export default async function handler(req, res) {
 
     const positions = Array.isArray(positionsRaw) ? positionsRaw : [];
     const orders = Array.isArray(ordersRaw) ? ordersRaw : [];
+    const recentOrders = Array.isArray(recentOrdersRaw) ? recentOrdersRaw : [];
     const portfolioRisk = getPortfolioRisk(account, positions);
+    const accountRisk = buildAccountRisk({
+      account,
+      positions,
+      openOrders: orders,
+      recentOrders,
+      portfolioHistory
+    });
+
+    if (!accountRisk.approved) {
+      return res.status(409).json({
+        error: 'Account-level circuit breaker blocked this test order.',
+        risk: accountRisk
+      });
+    }
 
     if (portfolioRisk.daily_loss_lock || portfolioRisk.exposure_lock || portfolioRisk.position_lock) {
       return res.status(409).json({
