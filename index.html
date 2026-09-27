@@ -144,6 +144,18 @@ body{padding:0;overflow-x:hidden}
 }
 .quick-actions button:hover{background:#1d2735}
 .page-empty-note{grid-column:1/-1;color:#7f8a99;padding:22px;border:1px dashed #2a3441;border-radius:14px}
+.overview-snapshot{grid-column:1/-1!important;padding:0!important;overflow:hidden}
+.snapshot-head{padding:15px 17px 10px;border-bottom:1px solid #222c3a}
+.snapshot-grid{display:grid;grid-template-columns:repeat(3,1fr)}
+.snapshot-cell{padding:16px 17px;border-right:1px solid #222c3a}
+.snapshot-cell:last-child{border-right:0}
+.snapshot-value{font-size:17px;font-weight:850;margin-top:5px;letter-spacing:-.25px}
+.snapshot-note{font-size:11px;color:#7f8a99;margin-top:4px;line-height:1.35}
+@media(max-width:760px){
+  .snapshot-grid{grid-template-columns:1fr}
+  .snapshot-cell{border-right:0;border-bottom:1px solid #222c3a}
+  .snapshot-cell:last-child{border-bottom:0}
+}
 #legacyGrid.workspace-staged{display:none}
 #error{margin:16px 0 0}
 
@@ -669,7 +681,7 @@ function routeWorkspaceCards(){
     'Exposure':'overview',
     'Market':'overview',
     'Automation':'overview',
-    'Risk Control':'overview',
+    'Risk Control':'system',
 
     'Open Positions':'portfolio',
     'Portfolio Exposure Map':'portfolio',
@@ -713,6 +725,19 @@ function routeWorkspaceCards(){
   });
 
   const overview=document.getElementById('page-overview-grid');
+  if(overview&&!document.getElementById('overviewSnapshot')){
+    const snapshot=document.createElement('div');
+    snapshot.id='overviewSnapshot';
+    snapshot.className='card overview-snapshot';
+    snapshot.innerHTML=
+      '<div class="snapshot-head"><div class="label">At a Glance</div></div>'+
+      '<div class="snapshot-grid">'+
+        '<div class="snapshot-cell"><div class="label">Open Positions</div><div class="snapshot-value" id="overviewPositions">—</div><div class="snapshot-note">Across all paper-trading lanes</div></div>'+
+        '<div class="snapshot-cell"><div class="label">Entry Risk</div><div class="snapshot-value" id="overviewRiskState">—</div><div class="snapshot-note" id="overviewRiskNote">Waiting for account state</div></div>'+
+        '<div class="snapshot-cell"><div class="label">Next Market Event</div><div class="snapshot-value" id="overviewNextMarket">—</div><div class="snapshot-note" id="overviewNextMarketNote">Waiting for market clock</div></div>'+
+      '</div>';
+    overview.appendChild(snapshot);
+  }
   if(overview&&!document.getElementById('overviewQuickActions')){
     const quick=document.createElement('div');
     quick.id='overviewQuickActions';
@@ -726,6 +751,11 @@ function routeWorkspaceCards(){
         '<button type="button" data-goto="research">Research</button>'+
       '</div>';
     overview.appendChild(quick);
+  }
+  const snapshotNode=document.getElementById('overviewSnapshot');
+  const quickNode=document.getElementById('overviewQuickActions');
+  if(snapshotNode&&quickNode&&snapshotNode.nextSibling!==quickNode){
+    overview.insertBefore(snapshotNode,quickNode);
   }
 
   document.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>showWorkspacePage(b.dataset.goto)));
@@ -759,6 +789,22 @@ async function load(){
     document.getElementById('automation').className='value '+(d.automation_enabled?'positive':'warning');
     document.getElementById('brain').textContent=d.gemini_configured?'Gemini configured':'Gemini key missing';
     updateWorkspaceStatus(d);
+    const op=document.getElementById('overviewPositions');
+    if(op)op.textContent=String((d.positions||[]).length);
+    const riskLocked=Boolean(d.risk?.daily_loss_lock||d.risk?.exposure_lock||d.risk?.position_lock);
+    const ors=document.getElementById('overviewRiskState');
+    const orn=document.getElementById('overviewRiskNote');
+    if(ors){
+      ors.textContent=riskLocked?'LOCKED':'CLEAR';
+      ors.className='snapshot-value '+(riskLocked?'negative':'positive');
+    }
+    if(orn)orn.textContent=riskLocked?'New entries are currently blocked':'Primary portfolio entry gates are clear';
+    const onm=document.getElementById('overviewNextMarket');
+    const onmn=document.getElementById('overviewNextMarketNote');
+    if(onm)onm.textContent=marketIsOpen?'CLOSE':'OPEN';
+    if(onmn)onmn.textContent=marketIsOpen
+      ?new Date(d.market.next_close).toLocaleString()
+      :new Date(d.market.next_open).toLocaleString();
 
     const locks=[];
     if(d.risk?.daily_loss_lock) locks.push('DAILY LOSS LOCK');
