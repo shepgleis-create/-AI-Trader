@@ -70,16 +70,32 @@ Current calibration rules:
 - Max 3 open positions
 - Max 30% gross portfolio exposure
 - Daily loss kill switch at -2%
+- 30-day drawdown circuit breaker at -5%
+- Trailing-week loss circuit breaker at -4%
+- Consecutive autonomous-loss lock at 3
+- Open stop-defined risk budget capped at 1% of equity
 - Regime-adjusted minimum score
 - Minimum model conviction for Gemini entries
 - Event-risk veto
 - Liquidity floor
 - ATR / volatility ceilings
+- Market-stress lock for risk-off + very weak breadth
+- Broad-market volatility stress lock
+- Intraday chase protection for heavily extended names
 - Calibration entry cap: $25
 - No shorts
 - No options
 - No leverage-based sizing
 - No averaging down
+
+### Account-level circuit breakers
+The autonomous cycle, AI decision preview, and manual paper execution test now share the same account-level protection layer:
+- recent high-water equity / drawdown
+- trailing-week return
+- stop-defined open risk
+- consecutive closed autonomous losses
+
+If any account circuit breaker is active, new entries are blocked everywhere.
 
 ### Position sizing
 Sizing uses:
@@ -149,12 +165,14 @@ The current backtest uses today's active/liquid universe. This introduces surviv
 ### Execution journal
 Alpaca order history is used as the durable execution journal.
 
+Future autonomous order IDs also encode the pre-trade reference quote, allowing the dashboard to estimate entry slippage after fills.
+
 Autonomous order IDs encode:
 - Gemini vs quant fallback
 - scanner score
 - model conviction
 
-The dashboard also shows whether an order has broker-side protection legs.
+The dashboard also shows whether an order has broker-side protection legs and, for new autonomous orders, estimated entry slippage versus the pre-order quote.
 
 Skipped decisions are not yet durably persisted because the project currently has no database.
 
