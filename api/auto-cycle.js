@@ -5,6 +5,7 @@ import { evaluateEntry, entryThresholdForRegime, getPortfolioRisk, maxPortfolioC
 import { logTraderEvent } from '../lib/journal.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
+import { getIntradayConfirmation } from '../lib/intraday.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
@@ -694,6 +695,32 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, mode: 'PAPER', enabled, actions });
     }
 
+    const intraday = await getIntradayConfirmation(pick.symbol, key, secret);
+    if (!intraday.approved) {
+      const reason = intraday.reasons?.join(' · ') || 'Intraday execution confirmation failed';
+      logTraderEvent('risk_reject', {
+        symbol: pick.symbol,
+        reason,
+        intraday,
+        enabled
+      });
+      actions.push({
+        type: 'risk_reject',
+        symbol: pick.symbol,
+        reason,
+        intraday
+      });
+      return res.status(200).json({
+        ok: true,
+        mode: 'PAPER',
+        enabled,
+        regime: scan.regime,
+        portfolio_risk: portfolioRisk,
+        account_risk: accountRisk,
+        actions
+      });
+    }
+
     const px = execution.ask > 0 ? execution.ask : execution.price;
     const sizing = risk.sizing;
     const qty = px > 0 ? Number((sizing.notional / px).toFixed(8)) : 0;
@@ -719,6 +746,7 @@ export default async function handler(req, res) {
       reference_price: px,
       execution_spread_pct: execution.spread_pct,
       execution_quote_age_seconds: execution.age_seconds,
+      intraday_confirmation: intraday,
       stop_price: Number(stopPrice),
       take_profit_price: Number(takeProfitPrice),
       client_order_id: clientId
