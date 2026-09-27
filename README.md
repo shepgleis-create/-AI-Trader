@@ -37,6 +37,25 @@ Candidate scoring includes:
 - 60-day beta versus SPY
 - overnight gap and move-from-open behavior
 
+### Multi-asset research and paper lanes
+The dashboard now has separate lanes for:
+- long U.S. stocks and ETFs
+- bearish U.S. stock / ETF setups
+- borrow-status-gated paper short tests
+- Alpaca spot crypto momentum / pump-risk scanning
+- guarded $25 spot-crypto paper entries
+- options-chain research using calls / puts, DTE, spreads and Greeks
+- guarded one-contract long call / long put paper entries
+- a Gemini Multi-Asset AI Router that compares loaded lanes and may choose long equity, short equity, crypto long, long call, long put, or SKIP
+
+The router is advisory. Each execution endpoint independently reloads live account/market data and re-applies its own deterministic checks.
+
+Crypto and options use app-managed risk monitors because Alpaca's crypto and options order paths do not use the same equity bracket workflow:
+- crypto risk monitor: every 15 minutes, 24/7
+- options risk monitor: every 15 minutes during the weekday U.S. market window
+
+The Alpaca crypto universe is scanned dynamically, but it is not a thousands-of-tokens venue. A broader provider adapter will be required before this system can research thousands of newly launched tokens.
+
 ### Market regime
 SPY is used to classify the environment as:
 - `RISK_ON`
@@ -90,10 +109,13 @@ Current calibration rules:
 - Gap-fade and extreme-gap vetoes
 - High-beta veto and beta-based size reduction
 - Sector-cluster concentration guard
-- Calibration entry cap: $25
-- No shorts
-- No options
-- No leverage-based sizing
+- Long-equity calibration entry cap: $25
+- Short calibration: easy-to-borrow only, whole-share only, one-share test, $100 price ceiling, bracket protected
+- Crypto calibration: $25 spot-long only, high pump-risk blocked, app-managed -5% / +10% / 72-hour exits
+- Options calibration: long calls/puts only, one contract, max $100 premium, app-managed -35% / +70% / 2-DTE exit
+- No naked option selling
+- No crypto leverage
+- No leverage-based position sizing
 - No averaging down
 
 ### Account-level circuit breakers
@@ -133,7 +155,7 @@ New autonomous paper entries are submitted as price-capped Alpaca limit bracket 
 This is important because Vercel Hobby scheduling is not suitable for second-by-second risk management.
 
 ### Automation
-On Vercel Pro, one weekday cron checks the autonomous cycle every 15 minutes from 13:00–21:59 UTC. A second weekday cron runs the Decision Memory outcome grader after the U.S. close. The endpoint exits immediately when Alpaca reports the market closed, which covers both U.S. daylight-saving and standard-time market hours without maintaining two seasonal schedules.
+On Vercel Pro, the long-equity autonomous cycle runs every 15 minutes from 13:00–21:59 UTC on weekdays. The options risk monitor runs on the same weekday cadence, the crypto risk monitor runs every 15 minutes 24/7, and the Decision Memory outcome grader runs after the U.S. close on weekdays. The endpoint exits immediately when Alpaca reports the market closed, which covers both U.S. daylight-saving and standard-time market hours without maintaining two seasonal schedules.
 
 Each cycle:
 1. checks Alpaca account / market state
@@ -302,9 +324,10 @@ The application no longer requires `OPENAI_API_KEY`.
 ## What is still intentionally not enabled
 
 - live-money trading
-- options
-- crypto
-- short selling
+- autonomous multi-asset order selection/execution
+- naked option selling
+- leveraged crypto
+- HTB short locates in paper mode
 - intraday high-frequency strategies
 - large position sizes
 - automatic scaling based on early wins
