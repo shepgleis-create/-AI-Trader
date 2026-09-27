@@ -14,6 +14,11 @@ function priceRound(n) {
   return Number(n).toFixed(2);
 }
 
+function isOpenOrderStatus(status) {
+  return ['accepted','new','partially_filled','calculated','pending_new','pending_cancel','accepted_for_bidding']
+    .includes(String(status || '').toLowerCase());
+}
+
 function marketEntryWindow(clock) {
   const now = new Date(clock?.timestamp || Date.now());
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -191,6 +196,77 @@ export default async function handler(req, res) {
           actions.push({ type: 'exit_dry_run', symbol: p.symbol, reason, plpc });
         }
       }
+    }
+
+    // Ratchet autonomous bracket stops upward once a position is profitable.
+    for (const p of positions) {
+      const plpc = Number(p.unrealized_plpc || 0);
+      if (plpc < 0.03) continue;
+
+      const parent = autonomousParents.find(o =>
+        o.symbol === p.symbol &&
+        String(o.client_order_id || '').startsWith('aitr-') &&
+        Array.isArray(o.legs)
+      );
+      if (!parent) continue;
+
+      const stopLeg = parent.legs.find(leg =>
+        leg?.side === 'sell' &&
+        ['stop','stop_limit'].includes(String(leg?.type || '').toLowerCase()) &&
+        isOpenOrderStatus(leg?.status)
+      );
+      if (!stopLeg?.id) continue;
+
+      const entry = Number(p.avg_entry_price || 0);
+      const current = Number(p.current_price || 0);
+      const existingStop = Number(stopLeg.stop_price || 0);
+      if (!(entry > 0 && current > 0)) continue;
+
+      let desiredStop = entry * 1.001;
+      if (plpc >= 0.05) desiredStop = Math.max(desiredStop, current * 0.975);
+      if (plpc >= 0.08) desiredStop = Math.max(desiredStop, current * 0.965);
+
+      desiredStop = Number(priceRound(desiredStop));
+      if (!(desiredStop > existingStop * 1.0025)) continue;
+      if (desiredStop >= current * 0.995) continue;
+
+      if (!enabled) {
+        actions.push({
+          type: 'profit_protection_dry_run',
+          symbol: p.symbol,
+          plpc,
+          current_stop: existingStop || null,
+          proposed_stop: desiredStop
+        });
+        continue;
+      }
+
+      const patchRes = await fetch(`${baseUrl}/v2/orders/${encodeURIComponent(stopLeg.id)}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ stop_price: desiredStop.toFixed(2) })
+      });
+      const patched = await patchRes.json().catch(() => ({}));
+
+      logTraderEvent('profit_protection', {
+        symbol: p.symbol,
+        plpc,
+        previous_stop: existingStop || null,
+        requested_stop: desiredStop,
+        submitted: patchRes.ok,
+        replacement_order_id: patched?.id || null
+      });
+
+      actions.push({
+        type: 'profit_protection',
+        symbol: p.symbol,
+        plpc,
+        previous_stop: existingStop || null,
+        requested_stop: desiredStop,
+        submitted: patchRes.ok,
+        replacement_order_id: patched?.id || null,
+        error: patchRes.ok ? null : patched?.message || 'Stop replacement rejected'
+      });
     }
 
     if (!entryWindow.allowed) {
