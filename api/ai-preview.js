@@ -1,9 +1,11 @@
+import { requireDashboardAuth } from '../lib/auth.js';
 import { fetchMarketScan } from '../lib/strategy.js';
 import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
 import { evaluateEntry, entryThresholdForRegime } from '../lib/risk.js';
 
 export default async function handler(req, res) {
+  if (!requireDashboardAuth(req, res)) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const alpacaKey = process.env.ALPACA_API_KEY;
