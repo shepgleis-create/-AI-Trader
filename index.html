@@ -74,6 +74,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Actual Paper Performance vs SPY</div>
+      <p class="muted">This uses the paper account's real portfolio-history series, not simulated trades.</p>
+      <button id="performance">Refresh Performance</button>
+      <div id="performanceout" class="empty">No performance comparison loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Research Backtest</div>
       <p class="muted">Walk-forward daily-bar simulation with slippage, max 3 positions, ATR-based stops/targets, regime-adjusted thresholds, and SPY comparison. This is research—not a promise of future returns.</p>
       <button id="backtest">Run Research Backtest</button>
@@ -213,6 +220,29 @@ async function runAiAnalysis(){
   finally{btn.disabled=false}
 }
 
+async function loadPerformance(){
+  const btn=document.getElementById('performance'),box=document.getElementById('performanceout');
+  btn.disabled=true;box.className='empty';box.textContent='Loading actual paper-account performance…';
+  try{
+    const r=await fetch('/api/performance',{cache:'no-store'});const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Performance request failed');
+    box.className='';
+    if(d.points<2){
+      box.innerHTML='<div class="muted">'+esc(d.note||'Not enough history yet.')+'</div>';
+      return;
+    }
+    box.innerHTML='<div class="grid" style="margin-top:10px">'+
+      '<div class="card"><div class="label">Bot Return</div><div class="value '+(d.strategy_return>=0?'positive':'negative')+'">'+pct(d.strategy_return)+'</div></div>'+
+      '<div class="card"><div class="label">SPY Return</div><div class="value">'+pct(d.spy_return)+'</div></div>'+
+      '<div class="card"><div class="label">Excess vs SPY</div><div class="value '+(d.excess_return_vs_spy>=0?'positive':'negative')+'">'+pct(d.excess_return_vs_spy)+'</div></div>'+
+      '<div class="card"><div class="label">Paper P/L</div><div class="value '+(d.pnl_dollars>=0?'positive':'negative')+'">'+money(d.pnl_dollars)+'</div></div>'+
+      '<div class="card"><div class="label">Max Drawdown</div><div class="value negative">'+pct(d.max_drawdown)+'</div></div>'+
+      '<div class="card"><div class="label">Sharpe</div><div class="value">'+Number(d.sharpe||0).toFixed(2)+'</div></div>'+
+    '</div><div class="muted tiny" style="margin-top:10px">Period: '+esc(d.period)+' · '+d.points+' daily equity points</div>';
+  }catch(e){box.className='error';box.textContent=e.message||'Performance request failed'}
+  finally{btn.disabled=false}
+}
+
 async function runBacktest(){
   const btn=document.getElementById('backtest'),box=document.getElementById('backtestout');
   btn.disabled=true;box.className='empty';box.textContent='Running walk-forward research test… this is heavier than a normal scan.';
@@ -252,9 +282,10 @@ async function loadHistory(){
 document.getElementById('refresh').addEventListener('click',async()=>{await load();await loadHistory()});
 document.getElementById('scan').addEventListener('click',runScan);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
+document.getElementById('performance').addEventListener('click',loadPerformance);
 document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('paperbuy').addEventListener('click',paperBuy);
-load();loadHistory();
+load();loadHistory();loadPerformance();
 </script>
 </body>
 </html>
