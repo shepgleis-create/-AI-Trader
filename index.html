@@ -94,8 +94,15 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Portfolio Exposure Map</div>
+      <p class="muted">Infers each open position's broad sector behavior from U.S. sector ETFs and estimates 60-day market beta.</p>
+      <button id="exposureMap">Refresh Exposure Map</button>
+      <div id="exposureMapOut" class="empty">No exposure map loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Full U.S. Market Scanner</div>
-      <p class="muted">Every active tradable major-exchange U.S. equity is eligible. The engine filters by liquidity/activity, then deeply scores the best candidates using trend, momentum, RSI, ATR, volatility, relative strength versus SPY, and volume.</p>
+      <p class="muted">Every active tradable major-exchange U.S. equity is eligible. The engine filters by liquidity/activity, then scores trend, momentum, RSI, ATR, volatility, relative strength, beta, inferred sector behavior, overnight gaps, spreads, and volume.</p>
       <button id="scan">Run Market Scan</button>
       <div id="scanout" class="empty">No scan run yet.</div>
     </div>
@@ -217,7 +224,9 @@ async function login(){
     if(d.session) sessionStorage.setItem('ai_trader_session',d.session);
     document.getElementById('loginSecret').value='';
     hideLogin();
-    await Promise.all([load(),loadHistory(),loadPerformance(),runPreflight(),loadStrategyStats()]);
+    await load();
+    await loadHistory();
+    await loadAccountRisk();
   }catch(e){
     showLogin(e.message||'Login failed');
   }finally{
@@ -298,6 +307,32 @@ async function loadAccountRisk(){
   }
 }
 
+async function loadExposureMap(){
+  const btn=document.getElementById('exposureMap'),box=document.getElementById('exposureMapOut');
+  btn.disabled=true;box.className='empty';box.textContent='Calculating sector and beta exposure…';
+  try{
+    const r=await apiFetch('/api/exposure-map',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Exposure map failed');
+    if(!(d.positions||[]).length){
+      box.className='empty';
+      box.textContent=d.note||'No open paper positions.';
+      return;
+    }
+    const sectorRows=d.sectors||[];
+    box.className='';
+    box.innerHTML=
+      '<div class="muted tiny">Position-weighted beta: <strong>'+((d.weighted_beta==null)?'—':Number(d.weighted_beta).toFixed(2))+'</strong> · gross position value '+money(d.gross_position_value||0)+'</div>'+
+      '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Value</th><th>Sector Proxy</th><th>Sector Corr.</th><th>Beta</th><th>P/L</th></tr></thead><tbody>'+
+      d.positions.map(p=>'<tr><td><strong>'+esc(p.symbol)+'</strong></td><td>'+money(p.market_value)+'</td><td>'+esc(p.sector_proxy||'—')+'</td><td>'+((p.sector_correlation==null)?'—':Number(p.sector_correlation).toFixed(2))+'</td><td>'+((p.beta_60d==null)?'—':Number(p.beta_60d).toFixed(2))+'</td><td class="'+((p.unrealized_plpc||0)>=0?'positive':'negative')+'">'+pct(p.unrealized_plpc||0)+'</td></tr>').join('')+
+      '</tbody></table></div>'+
+      (sectorRows.length?'<div style="margin-top:12px"><div class="label">Sector Proxy Exposure</div>'+sectorRows.map(s=>'<div class="kv"><span class="muted">'+esc(s.sector_proxy)+'</span><strong>'+pct(s.exposure_pct||0)+'</strong></div>').join('')+'</div>':'');
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Exposure map failed';
+  }finally{btn.disabled=false}
+}
+
 async function runScan(){
   const btn=document.getElementById('scan'),box=document.getElementById('scanout');
   btn.disabled=true;box.className='empty';box.textContent='Scanning the U.S. equity market…';
@@ -313,8 +348,8 @@ async function runScan(){
     box.innerHTML='<div class="muted" style="margin-top:8px">Universe: <strong>'+d.universe_size+'</strong> · snapshots: '+(d.snapshot_count||0)+' · deep scan: '+(d.deep_scan_size||0)+' · analyzed: '+d.analyzed+' · regime: <strong>'+esc(d.regime?.label||'UNKNOWN')+'</strong></div>'+
     '<div class="muted tiny" style="margin-top:5px">Breadth: <strong>'+esc(breadth.label||'UNKNOWN')+'</strong>'+(breadth.advance_ratio!=null?' · advancers '+pct(breadth.advance_ratio):'')+'</div>'+
     (leaders?'<div class="muted tiny" style="margin-top:5px">Sector leaders: '+esc(leaders)+'</div>':'')+
-    '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Score</th><th>Setup</th><th>Price</th><th>RS Rank</th><th>Spread</th><th>20D</th><th>ATR</th><th>RSI</th></tr></thead><tbody>'+
-    d.candidates.map(c=>'<tr><td><strong>'+esc(c.symbol)+'</strong><div class="muted tiny">'+esc(c.setup)+'</div></td><td class="'+(c.score>=82?'positive':c.score<45?'negative':'')+'"><strong>'+c.score+'</strong></td><td>'+esc(c.setup_type||'TREND')+'</td><td>'+money(c.price)+'</td><td>'+Number((c.rs_percentile||0)*100).toFixed(0)+'%</td><td>'+((c.spread_pct==null)?'—':(c.spread_pct*100).toFixed(2)+'%')+'</td><td class="'+(c.momentum_20d>=0?'positive':'negative')+'">'+pct(c.momentum_20d)+'</td><td>'+pct(c.atr_pct)+'</td><td>'+Number(c.rsi14||0).toFixed(1)+'</td></tr>').join('')+
+    '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Score</th><th>Setup</th><th>Sector</th><th>Beta</th><th>Gap</th><th>RS Rank</th><th>Spread</th><th>20D</th><th>ATR</th><th>RSI</th></tr></thead><tbody>'+
+    d.candidates.map(c=>'<tr><td><strong>'+esc(c.symbol)+'</strong><div class="muted tiny">'+esc(c.setup)+'</div></td><td class="'+(c.score>=82?'positive':c.score<45?'negative':'')+'"><strong>'+c.score+'</strong></td><td>'+esc(c.setup_type||'TREND')+'</td><td>'+esc(c.sector_proxy||'—')+'</td><td>'+((c.beta_60d==null)?'—':Number(c.beta_60d).toFixed(2))+'</td><td class="'+((c.gap_pct||0)>=0?'positive':'negative')+'">'+pct(c.gap_pct||0)+'</td><td>'+Number((c.rs_percentile||0)*100).toFixed(0)+'%</td><td>'+((c.spread_pct==null)?'—':(c.spread_pct*100).toFixed(2)+'%')+'</td><td class="'+(c.momentum_20d>=0?'positive':'negative')+'">'+pct(c.momentum_20d)+'</td><td>'+pct(c.atr_pct)+'</td><td>'+Number(c.rsi14||0).toFixed(1)+'</td></tr>').join('')+
     '</tbody></table></div>';
   }catch(e){box.className='error';box.textContent=e.message||'Scan failed'}
   finally{btn.disabled=false}
@@ -439,8 +474,21 @@ async function loadStrategyStats(){
       '<tr><td><strong>Gemini</strong></td><td>'+Number(g.closed_trades||0)+'</td><td>'+pct(g.win_rate||0)+'</td><td class="'+((g.pnl||0)>=0?'positive':'negative')+'">'+money(g.pnl||0)+'</td><td>'+pct(g.avg_return||0)+'</td><td>'+Number(g.profit_factor||0).toFixed(2)+'</td><td>'+((g.avg_entry_slippage==null)?'—':pct(g.avg_entry_slippage))+'</td></tr>'+
       '<tr><td><strong>Quant fallback</strong></td><td>'+Number(q.closed_trades||0)+'</td><td>'+pct(q.win_rate||0)+'</td><td class="'+((q.pnl||0)>=0?'positive':'negative')+'">'+money(q.pnl||0)+'</td><td>'+pct(q.avg_return||0)+'</td><td>'+Number(q.profit_factor||0).toFixed(2)+'</td><td>'+((q.avg_entry_slippage==null)?'—':pct(q.avg_entry_slippage))+'</td></tr>'+
       '</tbody></table></div>';
+    const conf=Object.entries(d.calibration?.confidence||{});
+    const scores=Object.entries(d.calibration?.scanner_score||{});
+    if(conf.length){
+      box.innerHTML+='<div style="margin-top:14px"><div class="label">Gemini Confidence Calibration</div><div class="tablewrap"><table><thead><tr><th>Confidence</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th><th>P/L</th></tr></thead><tbody>'+
+        conf.map(([name,s])=>'<tr><td><strong>'+esc(name)+'</strong></td><td>'+Number(s.closed_trades||0)+'</td><td>'+pct(s.win_rate||0)+'</td><td class="'+((s.avg_return||0)>=0?'positive':'negative')+'">'+pct(s.avg_return||0)+'</td><td class="'+((s.pnl||0)>=0?'positive':'negative')+'">'+money(s.pnl||0)+'</td></tr>').join('')+
+        '</tbody></table></div></div>';
+    }
+    if(scores.length){
+      box.innerHTML+='<div style="margin-top:14px"><div class="label">Scanner Score Calibration</div><div class="tablewrap"><table><thead><tr><th>Score</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th><th>P/L</th></tr></thead><tbody>'+
+        scores.map(([name,s])=>'<tr><td><strong>'+esc(name)+'</strong></td><td>'+Number(s.closed_trades||0)+'</td><td>'+pct(s.win_rate||0)+'</td><td class="'+((s.avg_return||0)>=0?'positive':'negative')+'">'+pct(s.avg_return||0)+'</td><td class="'+((s.pnl||0)>=0?'positive':'negative')+'">'+money(s.pnl||0)+'</td></tr>').join('')+
+        '</tbody></table></div></div>'+
+        '<div class="muted tiny" style="margin-top:8px">Thresholds stay fixed until there are at least '+Number(d.calibration?.minimum_sample_before_adaptation||20)+' comparable closed trades. Confidence is not treated as a probability.</div>';
+    }
     if(!(d.total?.closed_trades>0)){
-      box.innerHTML+='<div class="muted tiny" style="margin-top:8px">No closed autonomous bracket trades yet. This will populate after paper trades open and close.</div>';
+      box.innerHTML+='<div class="muted tiny" style="margin-top:8px">No closed autonomous bracket trades yet. Calibration tables will populate after paper trades open and close.</div>';
     }
   }catch(e){box.className='error';box.textContent=e.message||'Strategy stats failed'}
   finally{btn.disabled=false}
@@ -569,6 +617,7 @@ document.getElementById('refresh').addEventListener('click',async()=>{
   await loadAccountRisk();
 });
 document.getElementById('scan').addEventListener('click',runScan);
+document.getElementById('exposureMap').addEventListener('click',loadExposureMap);
 document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('preflight').addEventListener('click',runPreflight);
