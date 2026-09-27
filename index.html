@@ -160,6 +160,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Out-of-Sample Robustness Lab</div>
+      <p class="muted">Tries multiple threshold, stop-distance and reward-target settings on a training window, then checks those exact settings on a later unseen validation window.</p>
+      <button id="robustnessLab">Run Robustness Lab</button>
+      <div id="robustnessLabOut" class="empty">No robustness test run yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Paper Execution Test</div>
       <p class="muted">During market hours, the top qualifying scanner candidate can be submitted as a tiny bracket-protected paper order. Calibration cap remains $25 until the execution path is proven.</p>
       <button id="paperbuy" disabled>Run a market scan first</button>
@@ -715,6 +722,44 @@ async function runBacktest(){
   finally{btn.disabled=false}
 }
 
+async function runRobustnessLab(){
+  const btn=document.getElementById('robustnessLab'),box=document.getElementById('robustnessLabOut');
+  btn.disabled=true;box.className='empty';box.textContent='Running train/validation parameter grid… this is a heavy research test.';
+  try{
+    const r=await apiFetch('/api/robustness-lab',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Robustness Lab failed');
+
+    const pick=d.selected_by_train||{};
+    const cfg=pick.config||{};
+    const tr=pick.train||{};
+    const va=pick.validation||{};
+    const rows=d.top_train_configs||[];
+
+    box.className='';
+    box.innerHTML=
+      '<div class="grid" style="margin-top:10px">'+
+        '<div class="card"><div class="label">Configs Tested</div><div class="value">'+Number(d.configs_tested||0)+'</div></div>'+
+        '<div class="card"><div class="label">Positive Validation</div><div class="value">'+pct(d.stability?.positive_validation_pct||0)+'</div></div>'+
+        '<div class="card"><div class="label">Beat SPY Validation</div><div class="value">'+pct(d.stability?.beat_spy_validation_pct||0)+'</div></div>'+
+        '<div class="card"><div class="label">Median Validation Sharpe</div><div class="value">'+Number(d.stability?.median_validation_sharpe||0).toFixed(2)+'</div></div>'+
+        '<div class="card"><div class="label">Selected Validation Return</div><div class="value '+((va.return||0)>=0?'positive':'negative')+'">'+pct(va.return||0)+'</div></div>'+
+        '<div class="card"><div class="label">Validation Excess vs SPY</div><div class="value '+((pick.validation_excess_vs_spy||0)>=0?'positive':'negative')+'">'+pct(pick.validation_excess_vs_spy||0)+'</div></div>'+
+      '</div>'+
+      '<div class="muted tiny" style="margin-top:10px">Train: '+esc(d.split?.train_start||'')+' → '+esc(d.split?.train_end||'')+' · Validation: '+esc(d.split?.validation_start||'')+' → '+esc(d.split?.validation_end||'')+'</div>'+
+      '<div class="kv" style="margin-top:8px"><span class="muted">Training-selected configuration</span><strong>threshold '+(Number(cfg.threshold_offset||0)>=0?'+':'')+Number(cfg.threshold_offset||0)+' · stop '+Number(cfg.stop_atr_multiple||0).toFixed(1)+'× ATR · target '+Number(cfg.reward_multiple||0).toFixed(1)+'R</strong></div>'+
+      '<div class="kv"><span class="muted">Train performance</span><strong>'+pct(tr.return||0)+' · Sharpe '+Number(tr.sharpe||0).toFixed(2)+' · PF '+Number(tr.profit_factor||0).toFixed(2)+'</strong></div>'+
+      '<div class="kv"><span class="muted">Validation performance</span><strong class="'+((va.return||0)>=0?'positive':'negative')+'">'+pct(va.return||0)+' · Sharpe '+Number(va.sharpe||0).toFixed(2)+' · PF '+Number(va.profit_factor||0).toFixed(2)+'</strong></div>'+
+      (rows.length?'<div style="margin-top:14px"><div class="label">Top Training Configurations → Validation</div><div class="tablewrap"><table><thead><tr><th>Threshold</th><th>Stop ATR</th><th>Target R</th><th>Train Return</th><th>Train Sharpe</th><th>Validation Return</th><th>Validation Sharpe</th><th>Validation PF</th></tr></thead><tbody>'+
+        rows.map(x=>'<tr><td>'+(Number(x.config?.threshold_offset||0)>=0?'+':'')+Number(x.config?.threshold_offset||0)+'</td><td>'+Number(x.config?.stop_atr_multiple||0).toFixed(1)+'×</td><td>'+Number(x.config?.reward_multiple||0).toFixed(1)+'R</td><td>'+pct(x.train?.return||0)+'</td><td>'+Number(x.train?.sharpe||0).toFixed(2)+'</td><td class="'+((x.validation?.return||0)>=0?'positive':'negative')+'">'+pct(x.validation?.return||0)+'</td><td>'+Number(x.validation?.sharpe||0).toFixed(2)+'</td><td>'+Number(x.validation?.profit_factor||0).toFixed(2)+'</td></tr>').join('')+
+        '</tbody></table></div></div>':'')+
+      '<div class="muted tiny" style="margin-top:10px">'+esc(d.warning||'')+'</div>';
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Robustness Lab failed';
+  }finally{btn.disabled=false}
+}
+
 async function emergencyClose(){
   const out=document.getElementById('emergencyout');
   const first=confirm('This will cancel all open PAPER orders and request closure of all PAPER positions. Continue?');
@@ -778,6 +823,7 @@ document.getElementById('benchmarkLab').addEventListener('click',runBenchmarkLab
 document.getElementById('evidenceGate').addEventListener('click',runEvidenceGate);
 document.getElementById('intradaybacktest').addEventListener('click',runIntradayBacktest);
 document.getElementById('backtest').addEventListener('click',runBacktest);
+document.getElementById('robustnessLab').addEventListener('click',runRobustnessLab);
 document.getElementById('emergency').addEventListener('click',emergencyClose);
 document.getElementById('paperbuy').addEventListener('click',paperBuy);
 hideLogin();
