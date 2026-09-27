@@ -1701,15 +1701,25 @@ async function loadMemoryStatus(){
     if(!r.ok)throw new Error(d.error||'Decision Memory status failed');
 
     if(!d.configured){
-      setWorkspaceChip('dB','WAITING','warning');
-      box.className='warning';
-      box.innerHTML='<strong>DATABASE NOT CONNECTED YET</strong>'+
-        '<div class="muted tiny" style="margin-top:6px">The Decision Memory code is deployed and waiting for a Postgres database. Trading continues normally; memory writes are safely skipped until storage is connected.</div>'+
-        '<div class="muted tiny" style="margin-top:6px">Supported connection variables: '+esc((d.expected_env||[]).join(' · '))+'</div>';
+      setWorkspaceChip('dB','SETUP','warning');
+      const grade=document.getElementById('gradeOutcomes');
+      const attr=document.getElementById('memoryAttribution');
+      if(grade)grade.disabled=true;
+      if(attr)attr.disabled=true;
+      box.className='empty';
+      box.innerHTML='<strong class="warning">NEON STORAGE IS NOT WIRED TO VERCEL YET</strong>'+
+        '<div class="muted tiny" style="margin-top:6px">Connecting Neon to ChatGPT did not automatically add a database connection to this website. AI Trader still needs a Postgres connection string exposed to the Vercel project as DATABASE_URL.</div>'+
+        '<div class="muted tiny" style="margin-top:6px">The trading system keeps running; only persistent Decision Memory is paused.</div>';
+      const attrBox=document.getElementById('memoryAttributionOut');
+      if(attrBox){attrBox.className='empty';attrBox.textContent='Available after Decision Memory storage is connected.'}
       return;
     }
 
     const o=d.outcomes||{},counts=d.counts||{};
+    const grade=document.getElementById('gradeOutcomes');
+    const attr=document.getElementById('memoryAttribution');
+    if(grade)grade.disabled=false;
+    if(attr)attr.disabled=false;
     setWorkspaceChip('dB','ONLINE','positive');
     box.className='';
     box.innerHTML=
