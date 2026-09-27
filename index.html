@@ -139,6 +139,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Multi-Asset AI Router</div>
+      <p class="muted">Compares the best loaded long-stock, short-stock, crypto and option setup and chooses one lane or SKIP. It cannot override the lane-specific risk checks.</p>
+      <button id="multiAssetAI">Compare Loaded Opportunities</button>
+      <div id="multiAssetAIOut" class="empty">Run one or more market scans, then compare them here.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Automation Cycle</div>
       <p class="muted">Runs the exact same autonomous cycle used by Vercel Cron. While AUTO_TRADING_ENABLED=false it remains a dry run and will not submit a new automated order.</p>
       <button id="runcycle">Run Automation Cycle Now</button>
@@ -713,6 +720,50 @@ async function paperBuy(){
   finally{updatePaperButton()}
 }
 
+async function runMultiAssetAI(){
+  const btn=document.getElementById('multiAssetAI'),box=document.getElementById('multiAssetAIOut');
+  const optionPayload=topOptionCandidate&&topOptionUnderlying&&topOptionDirection
+    ?{...topOptionCandidate,underlying:topOptionUnderlying,direction:topOptionDirection}
+    :null;
+
+  if(!topCandidate&&!topBearish&&!topCrypto&&!optionPayload){
+    box.className='warning';
+    box.textContent='Run at least one stock, bearish, crypto, or options scan first.';
+    return;
+  }
+
+  btn.disabled=true;box.className='empty';box.textContent='Gemini is comparing the loaded asset lanes…';
+  try{
+    const r=await apiFetch('/api/multi-asset-ai',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        longCandidate:topCandidate,
+        shortCandidate:topBearish,
+        cryptoCandidate:topCrypto,
+        optionCandidate:optionPayload
+      })
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Multi-asset AI routing failed');
+    const x=d.decision||{};
+    const locked=!d.hard_risk_clear;
+    box.className='';
+    box.innerHTML=
+      '<div style="font-size:23px;font-weight:850;margin-top:8px">'+esc(x.action||'SKIP')+
+        (x.symbol?' · '+esc(x.symbol):'')+
+        (x.contract?' · '+esc(x.contract):'')+
+      '</div>'+
+      '<div class="muted" style="margin-top:6px">Model conviction '+Number(x.confidence||0)+'/100 · '+esc(x.model||'')+'</div>'+
+      '<div class="muted" style="margin-top:8px">'+esc(x.rationale||'')+'</div>'+
+      '<div class="'+(locked?'negative':'positive')+'" style="margin-top:10px"><strong>'+(locked?'ACCOUNT/PORTFOLIO LOCK ACTIVE':'ACCOUNT/PORTFOLIO HARD GATES CLEAR')+'</strong></div>'+
+      (d.hard_locks?.length?'<div class="warning tiny" style="margin-top:6px">'+d.hard_locks.map(esc).join(' · ')+'</div>':'')+
+      '<div class="muted tiny" style="margin-top:8px">Available lanes: '+esc((x.available_lanes||[]).join(' · '))+' · recommendation only; execution endpoints revalidate everything.</div>';
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Multi-asset AI routing failed';
+  }finally{btn.disabled=false}
+}
+
 async function runAutomationCycle(){
   const btn=document.getElementById('runcycle'),box=document.getElementById('cycleout');
   btn.disabled=true;box.className='empty';box.textContent='Running autonomous cycle…';
@@ -1219,6 +1270,7 @@ document.getElementById('paperCrypto').addEventListener('click',paperCrypto);
 document.getElementById('paperOption').addEventListener('click',paperOption);
 document.getElementById('bullOptions').addEventListener('click',()=>runOptionsLab('BULLISH'));
 document.getElementById('bearOptions').addEventListener('click',()=>runOptionsLab('BEARISH'));
+document.getElementById('multiAssetAI').addEventListener('click',runMultiAssetAI);
 document.getElementById('exposureMap').addEventListener('click',loadExposureMap);
 document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
