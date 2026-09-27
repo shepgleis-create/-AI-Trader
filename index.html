@@ -71,6 +71,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Alpaca Diagnostics</div>
+      <p class="muted">Tests each Alpaca dependency separately so one bad endpoint cannot hide behind a generic pre-trade error.</p>
+      <button id="alpacaDiag">Run Alpaca Diagnostics</button>
+      <div id="alpacaDiagOut" class="empty">No diagnostic run yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Risk Control</div>
       <div id="riskstatus" class="empty">Loading…</div>
     </div>
@@ -375,6 +382,27 @@ async function runAiAnalysis(){
   finally{btn.disabled=false}
 }
 
+async function runAlpacaDiagnostics(){
+  const btn=document.getElementById('alpacaDiag'),box=document.getElementById('alpacaDiagOut');
+  btn.disabled=true;box.className='empty';box.textContent='Testing Alpaca endpoints one by one…';
+  try{
+    const r=await apiFetch('/api/alpaca-diagnostics',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Alpaca diagnostics failed');
+    box.className='';
+    box.innerHTML='<div class="'+(d.ok?'positive':'warning')+'"><strong>'+(d.ok?'ALL ALPACA CHECKS PASSED':'ONE OR MORE ALPACA CHECKS FAILED')+'</strong></div>'+
+      '<div style="margin-top:8px">'+(d.results||[]).map(x=>
+        '<div class="kv"><span class="muted">'+esc(x.name)+'</span><strong class="'+(x.ok?'positive':'negative')+'">'+
+        (x.status==null?'ERROR':'HTTP '+x.status)+(x.elapsed_ms!=null?' · '+x.elapsed_ms+'ms':'')+
+        (x.message?' · '+esc(x.message):'')+
+        '</strong></div>'
+      ).join('')+'</div>';
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Alpaca diagnostics failed';
+  }finally{btn.disabled=false}
+}
+
 async function runPreflight(){
   const btn=document.getElementById('preflight'),box=document.getElementById('preflightout');
   btn.disabled=true;box.className='empty';box.textContent='Checking system…';
@@ -544,6 +572,7 @@ document.getElementById('scan').addEventListener('click',runScan);
 document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('preflight').addEventListener('click',runPreflight);
+document.getElementById('alpacaDiag').addEventListener('click',runAlpacaDiagnostics);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
 document.getElementById('performance').addEventListener('click',loadPerformance);
 document.getElementById('intradaybacktest').addEventListener('click',runIntradayBacktest);
