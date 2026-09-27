@@ -111,6 +111,30 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Bearish Equity + ETF Lab</div>
+      <p class="muted">Finds liquid downtrends, checks current Alpaca shortability and borrow status, penalizes squeeze risk, and separates research candidates from names actually eligible for a paper short.</p>
+      <button id="shortScan">Run Bearish / Short Scan</button>
+      <button id="paperShort" disabled>Run the bearish scan first</button>
+      <div id="shortScanOut" class="empty">No bearish scan run yet.</div>
+      <div id="paperShortOut" class="muted"></div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Crypto Radar</div>
+      <p class="muted">Scans every active Alpaca USD crypto pair for momentum, liquidity, volatility, and pump/fade risk. Research-only until the dedicated 24/7 crypto exit monitor is live.</p>
+      <button id="cryptoScan">Run Crypto Scan</button>
+      <div id="cryptoScanOut" class="empty">No crypto scan run yet.</div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Options Chain Lab</div>
+      <p class="muted">Builds call or put candidates from the best current bullish/bearish underlying. Uses option-chain quotes and Greeks; execution remains research-only for now.</p>
+      <button id="bullOptions" disabled>Run stock scan for bullish calls</button>
+      <button id="bearOptions" disabled>Run bearish scan for puts</button>
+      <div id="optionsLabOut" class="empty">No options chain loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Automation Cycle</div>
       <p class="muted">Runs the exact same autonomous cycle used by Vercel Cron. While AUTO_TRADING_ENABLED=false it remains a dry run and will not submit a new automated order.</p>
       <button id="runcycle">Run Automation Cycle Now</button>
@@ -216,7 +240,10 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
       <div class="kv"><span class="muted">Calibration entry cap</span><strong>$25</strong></div>
       <div class="kv"><span class="muted">Autonomous entries/day</span><strong>1</strong></div>
       <div class="kv"><span class="muted">Same-symbol cooldown</span><strong>5 days</strong></div>
-      <div class="kv"><span class="muted">New-entry protection</span><strong>Broker-side bracket stop + target</strong></div>
+      <div class="kv"><span class="muted">Long entry protection</span><strong>Broker-side bracket stop + target</strong></div>
+      <div class="kv"><span class="muted">Short calibration</span><strong>ETB only · whole-share · $100 ceiling · bracket protected</strong></div>
+      <div class="kv"><span class="muted">Crypto execution</span><strong>OFF — research scan only</strong></div>
+      <div class="kv"><span class="muted">Options execution</span><strong>OFF — chain research only</strong></div>
     </div>
   </section>
   <p id="error" class="error"></p>
@@ -280,6 +307,8 @@ const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).
 const pct=n=>(Number(n||0)*100).toFixed(2)+'%';
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 let topCandidate=null;
+let topBearish=null;
+let topCrypto=null;
 let marketIsOpen=false;
 let lastRegime=null;
 
@@ -312,11 +341,12 @@ async function load(){
     const box=document.getElementById('positions');
     if(!d.positions.length){box.className='empty';box.textContent='No open paper positions yet.'}
     else{
-      box.className='';box.innerHTML='<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Qty</th><th>Value</th><th>P/L</th><th>Protection</th></tr></thead><tbody>'+
-      d.positions.map(p=>'<tr><td><strong>'+esc(p.symbol)+'</strong></td><td>'+p.qty+'</td><td>'+money(p.market_value)+'</td><td class="'+(p.unrealized_pl>=0?'positive':'negative')+'">'+money(p.unrealized_pl)+' ('+pct(p.unrealized_plpc)+')</td><td>'+(p.broker_protected?'<span class="positive">BRACKET</span>':'<span class="warning">LEGACY</span>')+'</td></tr>').join('')+
+      box.className='';box.innerHTML='<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Value</th><th>P/L</th><th>Protection</th></tr></thead><tbody>'+
+      d.positions.map(p=>'<tr><td><strong>'+esc(p.symbol)+'</strong></td><td>'+((Number(p.qty)<0)?'<span class="negative">SHORT</span>':'<span class="positive">LONG</span>')+'</td><td>'+p.qty+'</td><td>'+money(p.market_value)+'</td><td class="'+(p.unrealized_pl>=0?'positive':'negative')+'">'+money(p.unrealized_pl)+' ('+pct(p.unrealized_plpc)+')</td><td>'+(p.broker_protected?'<span class="positive">BRACKET</span>':'<span class="warning">LEGACY</span>')+'</td></tr>').join('')+
       '</tbody></table></div>';
     }
     updatePaperButton();
+    updateMultiAssetButtons();
   }catch(e){document.getElementById('error').textContent=e.message||'Could not load system.'}
   finally{btn.disabled=false}
 }
@@ -373,6 +403,187 @@ async function loadExposureMap(){
   }finally{btn.disabled=false}
 }
 
+function updateMultiAssetButtons(){
+  const shortBtn=document.getElementById('paperShort');
+  const bull=document.getElementById('bullOptions');
+  const bear=document.getElementById('bearOptions');
+
+  if(shortBtn){
+    if(!topBearish){
+      shortBtn.disabled=true;
+      shortBtn.textContent='Run the bearish scan first';
+    }else if(!topBearish.paper_short_eligible){
+      shortBtn.disabled=true;
+      shortBtn.textContent=topBearish.symbol+' is not ETB short-eligible';
+    }else if(!marketIsOpen){
+      shortBtn.disabled=true;
+      shortBtn.textContent='Market closed — '+topBearish.symbol+' short setup '+topBearish.score;
+    }else{
+      shortBtn.disabled=false;
+      shortBtn.textContent='Bracket Paper Short '+topBearish.symbol+' — 1 share / $100 ceiling';
+    }
+  }
+
+  if(bull){
+    bull.disabled=!topCandidate;
+    bull.textContent=topCandidate
+      ?'Call Chain · '+topCandidate.symbol+' ('+topCandidate.score+')'
+      :'Run stock scan for bullish calls';
+  }
+  if(bear){
+    bear.disabled=!topBearish;
+    bear.textContent=topBearish
+      ?'Put Chain · '+topBearish.symbol+' ('+topBearish.score+')'
+      :'Run bearish scan for puts';
+  }
+}
+
+async function runShortScan(){
+  const btn=document.getElementById('shortScan'),box=document.getElementById('shortScanOut');
+  btn.disabled=true;box.className='empty';box.textContent='Scanning liquid U.S. equities and ETFs for bearish setups + current borrow status…';
+  try{
+    const r=await apiFetch('/api/short-scan',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Bearish scan failed');
+
+    const rows=d.candidates||[];
+    topBearish=rows.find(x=>x.paper_short_eligible&&x.score>=70)||rows.find(x=>x.paper_short_eligible)||rows[0]||null;
+    updateMultiAssetButtons();
+
+    if(!rows.length){
+      box.className='empty';box.textContent='No bearish candidates returned.';return;
+    }
+
+    box.className='';
+    box.innerHTML=
+      '<div class="muted tiny">Equity universe '+Number(d.universe_size||0)+' · liquid reviewed '+Number(d.liquid_reviewed||0)+' · ETB candidates '+Number(d.eligible_easy_to_borrow||0)+'</div>'+
+      '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Bear Score</th><th>Borrow</th><th>Squeeze</th><th>Day</th><th>20D</th><th>RS Weak.</th><th>RSI</th><th>ATR</th><th>Spread</th></tr></thead><tbody>'+
+      rows.map(x=>'<tr>'+
+        '<td><strong>'+esc(x.symbol)+'</strong></td>'+
+        '<td class="'+(x.score>=82?'negative':'')+'"><strong>'+Number(x.score||0)+'</strong></td>'+
+        '<td class="'+(x.paper_short_eligible?'positive':'warning')+'">'+esc(x.borrow_status||'unknown')+'</td>'+
+        '<td class="'+(x.squeeze_risk==='HIGH'?'negative':x.squeeze_risk==='MEDIUM'?'warning':'positive')+'">'+esc(x.squeeze_risk||'—')+'</td>'+
+        '<td class="'+((x.day_change||0)<=0?'negative':'positive')+'">'+pct(x.day_change||0)+'</td>'+
+        '<td>'+pct(x.momentum_20d||0)+'</td>'+
+        '<td>'+pct(x.relative_weakness_20d||0)+'</td>'+
+        '<td>'+Number(x.rsi14||0).toFixed(1)+'</td>'+
+        '<td>'+pct(x.atr_pct||0)+'</td>'+
+        '<td>'+((x.spread_pct==null)?'—':pct(x.spread_pct))+'</td>'+
+      '</tr>').join('')+
+      '</tbody></table></div>'+
+      (topBearish?'<div class="muted tiny" style="margin-top:8px">Current short-test candidate: <strong>'+esc(topBearish.symbol)+'</strong> · '+esc((topBearish.reasons||[]).slice(0,4).join(' · '))+'</div>':'');
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Bearish scan failed';
+  }finally{btn.disabled=false}
+}
+
+async function paperShort(){
+  if(!topBearish)return;
+  const btn=document.getElementById('paperShort'),out=document.getElementById('paperShortOut');
+  btn.disabled=true;out.className='muted';out.textContent='Rechecking borrow status, account risk, quote quality and submitting protected paper short…';
+  try{
+    const r=await apiFetch('/api/paper-short',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({symbol:topBearish.symbol})
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Paper short failed');
+    out.className='positive';
+    out.textContent='Paper short submitted · '+d.symbol+' · entry ≤ '+money(d.entry_limit_price)+' · stop '+money(d.stop_price)+' · target '+money(d.take_profit_price)+' · borrow '+d.borrow_status;
+    await load();await loadHistory();
+  }catch(e){
+    out.className='error';out.textContent=e.message||'Paper short failed';
+  }finally{updateMultiAssetButtons()}
+}
+
+async function runCryptoScan(){
+  const btn=document.getElementById('cryptoScan'),box=document.getElementById('cryptoScanOut');
+  btn.disabled=true;box.className='empty';box.textContent='Scanning every active Alpaca USD crypto pair…';
+  try{
+    const r=await apiFetch('/api/crypto-scan',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Crypto scan failed');
+
+    const rows=d.candidates||[];
+    topCrypto=rows.find(x=>x.pump_dump_risk!=='HIGH'&&x.score>=70)||rows[0]||null;
+    if(!rows.length){box.className='empty';box.textContent='No crypto candidates returned.';return}
+
+    box.className='';
+    box.innerHTML=
+      '<div class="warning tiny">Research-only · no autonomous crypto orders yet. Universe '+Number(d.universe_size||0)+' · deep analyzed '+Number(d.deeply_analyzed||0)+' · high pump-risk '+Number(d.high_pump_risk||0)+'</div>'+
+      '<div class="tablewrap"><table><thead><tr><th>Pair</th><th>Score</th><th>Signal</th><th>Pump Risk</th><th>Day</th><th>7D</th><th>30D</th><th>RSI</th><th>Vol</th><th>Spread</th></tr></thead><tbody>'+
+      rows.map(x=>'<tr>'+
+        '<td><strong>'+esc(x.symbol)+'</strong></td>'+
+        '<td><strong>'+Number(x.score||0)+'</strong></td>'+
+        '<td>'+esc(x.research_signal||'WATCH')+'</td>'+
+        '<td class="'+(x.pump_dump_risk==='HIGH'?'negative':x.pump_dump_risk==='MEDIUM'?'warning':'positive')+'">'+esc(x.pump_dump_risk||'—')+'</td>'+
+        '<td class="'+((x.day_change||0)>=0?'positive':'negative')+'">'+pct(x.day_change||0)+'</td>'+
+        '<td class="'+((x.momentum_7d||0)>=0?'positive':'negative')+'">'+pct(x.momentum_7d||0)+'</td>'+
+        '<td>'+pct(x.momentum_30d||0)+'</td>'+
+        '<td>'+Number(x.rsi14||0).toFixed(1)+'</td>'+
+        '<td>'+pct(x.volatility_14d||0)+'</td>'+
+        '<td>'+((x.spread_pct==null)?'—':pct(x.spread_pct))+'</td>'+
+      '</tr>').join('')+
+      '</tbody></table></div>'+
+      (topCrypto?'<div class="muted tiny" style="margin-top:8px">Highest non-high-risk candidate: <strong>'+esc(topCrypto.symbol)+'</strong> · '+esc((topCrypto.reasons||[]).slice(0,4).join(' · '))+'</div>':'');
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Crypto scan failed';
+  }finally{btn.disabled=false}
+}
+
+async function runOptionsLab(direction){
+  const source=direction==='BEARISH'?topBearish:topCandidate;
+  const box=document.getElementById('optionsLabOut');
+  if(!source){
+    box.className='warning';
+    box.textContent=direction==='BEARISH'?'Run the bearish scan first.':'Run the stock scan first.';
+    return;
+  }
+
+  const btn=document.getElementById(direction==='BEARISH'?'bearOptions':'bullOptions');
+  btn.disabled=true;box.className='empty';
+  box.textContent='Loading '+(direction==='BEARISH'?'put':'call')+' chain, Greeks, spreads and contract quality for '+source.symbol+'…';
+  try{
+    const qs=new URLSearchParams({
+      symbol:source.symbol,
+      direction,
+      price:String(source.price||0)
+    });
+    const r=await apiFetch('/api/options-lab?'+qs.toString(),{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Options Lab failed');
+    if(!d.available){
+      box.className='warning';
+      box.textContent='Options data unavailable for '+source.symbol+': '+(d.error||'unknown reason');
+      return;
+    }
+    const rows=d.contracts||[];
+    box.className='';
+    box.innerHTML=
+      '<div class="warning tiny"><strong>RESEARCH ONLY</strong> · '+esc(d.underlying)+' '+esc(d.option_type)+'s · underlying '+money(d.underlying_price)+' · feed '+esc(d.feed||'indicative')+'</div>'+
+      (rows.length
+        ?'<div class="tablewrap"><table><thead><tr><th>Contract</th><th>Quality</th><th>Expiry</th><th>DTE</th><th>Strike</th><th>Mid</th><th>Spread</th><th>Delta</th><th>Gamma</th><th>Theta</th><th>IV</th></tr></thead><tbody>'+
+          rows.map(x=>'<tr>'+
+            '<td><strong>'+esc(x.contract)+'</strong></td>'+
+            '<td>'+Number(x.quality_score||0)+'</td>'+
+            '<td>'+esc(x.expiry||'—')+'</td>'+
+            '<td>'+((x.dte==null)?'—':Number(x.dte))+'</td>'+
+            '<td>'+((x.strike==null)?'—':money(x.strike))+'</td>'+
+            '<td>'+money(x.mid||0)+'</td>'+
+            '<td>'+((x.spread_pct==null)?'—':pct(x.spread_pct))+'</td>'+
+            '<td>'+((x.delta==null)?'—':Number(x.delta).toFixed(2))+'</td>'+
+            '<td>'+((x.gamma==null)?'—':Number(x.gamma).toFixed(3))+'</td>'+
+            '<td>'+((x.theta==null)?'—':Number(x.theta).toFixed(3))+'</td>'+
+            '<td>'+((x.implied_volatility==null)?'—':pct(x.implied_volatility))+'</td>'+
+          '</tr>').join('')+
+          '</tbody></table></div>'
+        :'<div class="muted" style="margin-top:8px">No contracts passed basic chain parsing/liquidity checks.</div>');
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Options Lab failed';
+  }finally{updateMultiAssetButtons()}
+}
+
 async function runScan(){
   const btn=document.getElementById('scan'),box=document.getElementById('scanout');
   btn.disabled=true;box.className='empty';box.textContent='Scanning the U.S. equity market…';
@@ -380,7 +591,7 @@ async function runScan(){
     const r=await apiFetch('/api/scan',{cache:'no-store'});const d=await r.json();
     if(!r.ok) throw new Error(d.error||'Scan failed');
     lastRegime=d.regime||null;
-    topCandidate=d.candidates?.[0]||null;updatePaperButton();
+    topCandidate=d.candidates?.[0]||null;updatePaperButton();updateMultiAssetButtons();
     if(!topCandidate){box.textContent='No candidates returned.';return}
     box.className='';
     const leaders=(d.regime?.sector_leaders||[]).map(x=>x.symbol+' '+pct(x.return_20d)).join(' · ');
@@ -920,6 +1131,11 @@ document.getElementById('refresh').addEventListener('click',async()=>{
   await loadAccountRisk();
 });
 document.getElementById('scan').addEventListener('click',runScan);
+document.getElementById('shortScan').addEventListener('click',runShortScan);
+document.getElementById('paperShort').addEventListener('click',paperShort);
+document.getElementById('cryptoScan').addEventListener('click',runCryptoScan);
+document.getElementById('bullOptions').addEventListener('click',()=>runOptionsLab('BULLISH'));
+document.getElementById('bearOptions').addEventListener('click',()=>runOptionsLab('BEARISH'));
 document.getElementById('exposureMap').addEventListener('click',loadExposureMap);
 document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
