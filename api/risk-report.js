@@ -32,13 +32,36 @@ export default async function handler(req,res){
       fetch(historyUrl,{headers})
     ]);
 
-    const [account,positionsRaw,ordersRaw,recentOrdersRaw,portfolioHistory]=await Promise.all([
-      accountRes.json(),positionsRes.json(),ordersRes.json(),recentOrdersRes.json(),historyRes.json()
+    const [account,positionsRaw,ordersRaw,recentOrdersRaw,historyRaw]=await Promise.all([
+      accountRes.json().catch(()=>({})),
+      positionsRes.json().catch(()=>([])),
+      ordersRes.json().catch(()=>([])),
+      recentOrdersRes.json().catch(()=>([])),
+      historyRes.json().catch(()=>({}))
     ]);
 
-    if(!accountRes.ok||!positionsRes.ok||!ordersRes.ok||!recentOrdersRes.ok||!historyRes.ok){
-      return res.status(502).json({error:'Could not build account risk report'});
+    const checks=[
+      {name:'account',response:accountRes,body:account},
+      {name:'positions',response:positionsRes,body:positionsRaw},
+      {name:'open_orders',response:ordersRes,body:ordersRaw},
+      {name:'recent_orders',response:recentOrdersRes,body:recentOrdersRaw}
+    ].map(x=>({
+      name:x.name,
+      ok:x.response.ok,
+      status:x.response.status,
+      message:x.response.ok?null:String(x.body?.message||x.body?.error||x.response.statusText||'request failed').slice(0,180)
+    }));
+    const failed=checks.filter(x=>!x.ok);
+    if(failed.length){
+      return res.status(502).json({
+        error:'Alpaca risk-report check failed — '+failed.map(x=>`${x.name} HTTP ${x.status}${x.message?': '+x.message:''}`).join(' · '),
+        checks
+      });
     }
+
+    const historyAvailable=historyRes.ok;
+    const historyWarning=historyAvailable?null:`portfolio_history HTTP ${historyRes.status}: ${String(historyRaw?.message||historyRaw?.error||historyRes.statusText||'request failed').slice(0,180)}`;
+    const portfolioHistory=historyAvailable?historyRaw:{};
 
     const report=buildAccountRisk({
       account,
@@ -47,6 +70,8 @@ export default async function handler(req,res){
       recentOrders:Array.isArray(recentOrdersRaw)?recentOrdersRaw:[],
       portfolioHistory
     });
+    report.history_available=historyAvailable;
+    report.data_warnings=historyWarning?[historyWarning]:[];
 
     return res.status(200).json(report);
   }catch(error){
