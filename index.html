@@ -114,6 +114,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Emergency Paper Kill</div>
+      <p class="muted">Cancels all open paper orders and requests closure of all open paper positions. This does not change Vercel environment variables, so keep AUTO_TRADING_ENABLED=false while testing.</p>
+      <button id="emergency" style="background:#ff7777;color:#150607">Emergency Close All Paper Positions</button>
+      <div id="emergencyout" class="muted"></div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Current Safety Policy</div>
       <div class="kv"><span class="muted">Environment</span><strong>Alpaca paper only</strong></div>
       <div class="kv"><span class="muted">Daily loss kill switch</span><strong>−2%</strong></div>
@@ -272,6 +279,7 @@ async function runAiAnalysis(){
       '<div style="margin-top:10px" class="'+(approved?'positive':'warning')+'"><strong>Risk gate: '+(approved?'APPROVED':'NOT APPROVED')+'</strong></div>'+
       (risk.threshold?'<div class="muted tiny" style="margin-top:5px">Required scanner score: '+risk.threshold+'</div>':'')+
       (risk.sizing?'<div class="muted tiny">Planned calibration size: '+money(risk.sizing.notional)+' · stop '+pct(risk.sizing.stop_pct)+' · target '+pct(risk.sizing.take_profit_pct)+'</div>':'')+
+      (risk.portfolio_correlation?.correlation!=null?'<div class="muted tiny">Highest portfolio correlation: '+Number(risk.portfolio_correlation.correlation).toFixed(2)+(risk.portfolio_correlation.symbol?' vs '+esc(risk.portfolio_correlation.symbol):'')+'</div>':'')+
       (risk.reasons?.length?'<div class="warning tiny" style="margin-top:6px">'+risk.reasons.map(esc).join(' · ')+'</div>':'')+
       (d.llm_error?'<div class="muted tiny" style="margin-top:6px">Gemini unavailable: '+esc(d.llm_error)+'</div>':'');
   }catch(e){box.className='error';box.textContent=e.message||'Decision analysis failed'}
@@ -322,6 +330,37 @@ async function runBacktest(){
   finally{btn.disabled=false}
 }
 
+async function emergencyClose(){
+  const out=document.getElementById('emergencyout');
+  const first=confirm('This will cancel all open PAPER orders and request closure of all PAPER positions. Continue?');
+  if(!first)return;
+  const phrase=prompt('Type exactly: CLOSE PAPER POSITIONS');
+  if(phrase!=='CLOSE PAPER POSITIONS'){
+    out.className='warning';
+    out.textContent='Emergency close cancelled. Confirmation phrase did not match.';
+    return;
+  }
+  const btn=document.getElementById('emergency');
+  btn.disabled=true;out.className='muted';out.textContent='Sending emergency paper close…';
+  try{
+    const r=await apiFetch('/api/emergency-close',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({confirm:phrase})
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Emergency close failed');
+    out.className='positive';
+    out.textContent='Paper close request sent. Open orders cancelled: '+(d.orders_cancelled?'yes':'no')+' · position close requested: '+(d.positions_close_requested?'yes':'no');
+    await Promise.all([load(),loadHistory()]);
+  }catch(e){
+    out.className='error';
+    out.textContent=e.message||'Emergency close failed';
+  }finally{
+    btn.disabled=false;
+  }
+}
+
 async function loadHistory(){
   const box=document.getElementById('history');
   try{
@@ -342,6 +381,7 @@ document.getElementById('scan').addEventListener('click',runScan);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('performance').addEventListener('click',loadPerformance);
 document.getElementById('backtest').addEventListener('click',runBacktest);
+document.getElementById('emergency').addEventListener('click',emergencyClose);
 document.getElementById('paperbuy').addEventListener('click',paperBuy);
 hideLogin();
 Promise.all([load(),loadHistory(),loadPerformance()]).catch(()=>{});
