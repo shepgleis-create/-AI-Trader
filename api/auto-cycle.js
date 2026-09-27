@@ -2,6 +2,7 @@ import { fetchMarketScan, fetchBarsForSymbols } from '../lib/strategy.js';
 import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
 import { evaluateEntry, entryThresholdForRegime, getPortfolioRisk, maxPortfolioCorrelation } from '../lib/risk.js';
+import { logTraderEvent } from '../lib/journal.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
@@ -77,6 +78,7 @@ export default async function handler(req, res) {
     const portfolioRisk = getPortfolioRisk(account, positions);
 
     if (!clock.is_open) {
+      logTraderEvent('market_closed', { enabled, next_open: clock.next_open });
       return res.status(200).json({
         ok: true,
         enabled,
@@ -128,6 +130,7 @@ export default async function handler(req, res) {
     }
 
     if (portfolioRisk.daily_loss_lock) {
+      logTraderEvent('entry_lock', { reason: 'daily_loss', day_return: portfolioRisk.day_return, enabled });
       actions.push({
         type: 'entry_lock',
         reason: 'Daily loss kill switch active',
@@ -143,6 +146,7 @@ export default async function handler(req, res) {
     }
 
     if (portfolioRisk.exposure_lock || portfolioRisk.position_lock) {
+      logTraderEvent('entry_lock', { reason: portfolioRisk.exposure_lock ? 'exposure' : 'position_limit', exposure_pct: portfolioRisk.exposure_pct, positions: positions.length, enabled });
       actions.push({
         type: 'entry_lock',
         reason: portfolioRisk.exposure_lock
@@ -172,6 +176,7 @@ export default async function handler(req, res) {
       .slice(0, 5);
 
     if (!eligible.length) {
+      logTraderEvent('no_setup', { regime: scan.regime?.label, threshold: entryThreshold, enabled });
       actions.push({
         type: 'no_setup',
         reason: 'No candidate met the regime-adjusted review threshold',
@@ -204,6 +209,7 @@ export default async function handler(req, res) {
           candidateContext
         });
         source = 'LLM';
+        logTraderEvent('model_decision', { source, action: decision.action, symbol: decision.symbol, confidence: decision.confidence, model: decision.model, enabled });
         actions.push({
           type: 'ai_decision',
           action: decision.action,
@@ -236,6 +242,7 @@ export default async function handler(req, res) {
             rationale: 'No candidate cleared the regime-adjusted quantitative entry threshold.'
           };
 
+      logTraderEvent('model_decision', { source: 'QUANT_FALLBACK', action: decision.action, symbol: decision.symbol, confidence: decision.confidence, enabled });
       actions.push({
         type: 'quant_decision',
         action: decision.action,
@@ -246,6 +253,7 @@ export default async function handler(req, res) {
     }
 
     if (decision.action !== 'BUY') {
+      logTraderEvent('skip', { source, reason: decision.rationale, regime: scan.regime?.label, enabled });
       actions.push({ type: 'skip', reason: decision.rationale });
       return res.status(200).json({
         ok: true,
@@ -286,6 +294,7 @@ export default async function handler(req, res) {
       portfolioCorrelation
     });
 
+    logTraderEvent('risk_check', { symbol: pick.symbol, approved: risk.approved, reasons: risk.reasons, threshold: risk.threshold, correlation: risk.portfolio_correlation || null, enabled });
     actions.push({
       type: 'risk_check',
       symbol: pick.symbol,
@@ -297,6 +306,7 @@ export default async function handler(req, res) {
     });
 
     if (!risk.approved) {
+      logTraderEvent('risk_reject', { symbol: pick.symbol, reasons: risk.reasons, enabled });
       return res.status(200).json({
         ok: true,
         mode: 'PAPER',
@@ -335,6 +345,7 @@ export default async function handler(req, res) {
     };
 
     if (!enabled) {
+      logTraderEvent('entry_dry_run', planned);
       actions.push(planned);
     } else {
       const orderRes = await fetch(`${baseUrl}/v2/orders`, {
@@ -354,6 +365,7 @@ export default async function handler(req, res) {
       });
       const order = await orderRes.json();
 
+      logTraderEvent('entry_submit', { ...planned, submitted: orderRes.ok, order_id: order?.id || null, status: order?.status || null, error: orderRes.ok ? null : order?.message || 'Bracket order rejected' });
       actions.push({
         ...planned,
         submitted: orderRes.ok,
