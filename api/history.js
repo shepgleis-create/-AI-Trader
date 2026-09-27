@@ -1,3 +1,4 @@
+import { requireDashboardAuth } from '../lib/auth.js';
 function parseClientId(id) {
   const s = String(id || '');
   const m = s.match(/^aitr-(g|q)-(.+)-s(\d+)-c(\d+)-/);
@@ -16,6 +17,7 @@ function parseClientId(id) {
 }
 
 export default async function handler(req, res) {
+  if (!requireDashboardAuth(req, res)) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const key = process.env.ALPACA_API_KEY;
