@@ -2,19 +2,36 @@ import { requireDashboardAuth } from '../lib/auth.js';
 function parseClientId(id) {
   const s = String(id || '');
   const m = s.match(/^aitr-(g|q)-(.+)-s(\d+)-c(\d+)(?:-p(\d+))?-/);
-  if (!m) {
+  if (m) {
     return {
-      source: s.startsWith('aitest-') ? 'MANUAL_TEST' : null,
-      scanner_score: null,
-      model_conviction: null,
-      reference_price: null
+      source: m[1] === 'g' ? 'GEMINI' : 'QUANT_FALLBACK',
+      scanner_score: Number(m[3]),
+      model_conviction: Number(m[4]),
+      reference_price: m[5] ? Number(m[5]) / 100 : null
     };
   }
+
+  const short = s.match(/^aitr-s-(.+)-p(\d+)-/);
+  if (short) {
+    return {
+      source: 'PAPER_SHORT',
+      scanner_score: null,
+      model_conviction: null,
+      reference_price: Number(short[2]) / 100
+    };
+  }
+  if (s.startsWith('aitr-c-')) {
+    return { source: 'CRYPTO', scanner_score: null, model_conviction: null, reference_price: null };
+  }
+  if (s.startsWith('aitr-o-')) {
+    return { source: 'OPTION', scanner_score: null, model_conviction: null, reference_price: null };
+  }
+
   return {
-    source: m[1] === 'g' ? 'GEMINI' : 'QUANT_FALLBACK',
-    scanner_score: Number(m[3]),
-    model_conviction: Number(m[4]),
-    reference_price: m[5] ? Number(m[5]) / 100 : null
+    source: s.startsWith('aitest-') ? 'MANUAL_TEST' : null,
+    scanner_score: null,
+    model_conviction: null,
+    reference_price: null
   };
 }
 
@@ -76,7 +93,7 @@ export default async function handler(req, res) {
       };
     });
 
-    const botOrders = rows.filter(o => o.source === 'GEMINI' || o.source === 'QUANT_FALLBACK');
+    const botOrders = rows.filter(o => ['GEMINI','QUANT_FALLBACK','PAPER_SHORT','CRYPTO','OPTION'].includes(o.source));
     const filled = rows.filter(o => o.status === 'filled');
 
     return res.status(200).json({
@@ -85,7 +102,10 @@ export default async function handler(req, res) {
         filled_orders: filled.length,
         autonomous_orders: botOrders.length,
         gemini_orders: botOrders.filter(o => o.source === 'GEMINI').length,
-        quant_fallback_orders: botOrders.filter(o => o.source === 'QUANT_FALLBACK').length
+        quant_fallback_orders: botOrders.filter(o => o.source === 'QUANT_FALLBACK').length,
+        short_orders: botOrders.filter(o => o.source === 'PAPER_SHORT').length,
+        crypto_orders: botOrders.filter(o => o.source === 'CRYPTO').length,
+        option_orders: botOrders.filter(o => o.source === 'OPTION').length
       },
       orders: rows
     });
