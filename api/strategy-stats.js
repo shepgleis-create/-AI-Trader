@@ -15,6 +15,18 @@ function scoreFromId(id){
     : {score:null,confidence:null,reference_price:null};
 }
 
+function bucketStats(trades,field,buckets){
+  const out={};
+  for(const b of buckets){
+    const rows=trades.filter(t=>{
+      const v=Number(t?.[field]);
+      return Number.isFinite(v)&&v>=b.min&&v<=b.max;
+    });
+    out[b.label]=summarize(rows);
+  }
+  return out;
+}
+
 function summarize(trades){
   const wins=trades.filter(t=>t.pnl>0);
   const losses=trades.filter(t=>t.pnl<0);
@@ -97,6 +109,21 @@ export default async function handler(req,res){
       by_source:{
         GEMINI:summarize(gemini),
         QUANT_FALLBACK:summarize(quant)
+      },
+      calibration:{
+        confidence:bucketStats(gemini,'model_confidence',[
+          {label:'60-69',min:60,max:69},
+          {label:'70-79',min:70,max:79},
+          {label:'80-89',min:80,max:89},
+          {label:'90-100',min:90,max:100}
+        ]),
+        scanner_score:bucketStats(trades,'scanner_score',[
+          {label:'82-85',min:82,max:85},
+          {label:'86-89',min:86,max:89},
+          {label:'90-94',min:90,max:94},
+          {label:'95-100',min:95,max:100}
+        ]),
+        minimum_sample_before_adaptation:20
       },
       recent:trades.slice(0,20)
     });
