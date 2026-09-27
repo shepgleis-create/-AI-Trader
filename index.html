@@ -109,6 +109,13 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     </div>
 
     <div class="card wide">
+      <div class="label">Intraday Calibration Backtest</div>
+      <p class="muted">Closer to the live paper behavior: prior-day signals, entry after 9:45 ET, one trade per day, broker-style stop/target, and forced exit by 3:45 ET.</p>
+      <button id="intradaybacktest">Run Intraday Calibration Backtest</button>
+      <div id="intradaybacktestout" class="empty">No intraday backtest run yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Research Backtest</div>
       <p class="muted">Walk-forward daily-bar simulation with slippage, max 3 positions, ATR-based stops/targets, regime-adjusted thresholds, and SPY comparison. This is research—not a promise of future returns.</p>
       <button id="backtest">Run Research Backtest</button>
@@ -402,6 +409,29 @@ async function loadPerformance(){
   finally{btn.disabled=false}
 }
 
+async function runIntradayBacktest(){
+  const btn=document.getElementById('intradaybacktest'),box=document.getElementById('intradaybacktestout');
+  btn.disabled=true;box.className='empty';box.textContent='Running 15-minute calibration replay…';
+  try{
+    const r=await apiFetch('/api/intraday-backtest',{cache:'no-store'});const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Intraday backtest failed');
+    const m=d.metrics||{};
+    const setupRows=Object.entries(d.attribution?.by_setup||{}).sort((a,b)=>(b[1].avg_return||0)-(a[1].avg_return||0));
+    box.className='';
+    box.innerHTML='<div class="grid" style="margin-top:10px">'+
+      '<div class="card"><div class="label">Calibrated Return</div><div class="value '+((m.total_return||0)>=0?'positive':'negative')+'">'+pct(m.total_return||0)+'</div></div>'+
+      '<div class="card"><div class="label">Win Rate</div><div class="value">'+pct(m.win_rate||0)+'</div></div>'+
+      '<div class="card"><div class="label">Profit Factor</div><div class="value">'+Number(m.profit_factor||0).toFixed(2)+'</div></div>'+
+      '<div class="card"><div class="label">Avg Trade</div><div class="value '+((m.avg_return||0)>=0?'positive':'negative')+'">'+pct(m.avg_return||0)+'</div></div>'+
+      '<div class="card"><div class="label">Trades</div><div class="value">'+Number(m.trades||0)+'</div></div>'+
+      '<div class="card"><div class="label">SPY Buy/Hold</div><div class="value">'+pct(m.spy_buy_hold_return||0)+'</div></div>'+
+    '</div>'+
+    '<div class="muted tiny" style="margin-top:10px">'+esc(d.period?.start||'')+' → '+esc(d.period?.end||'')+' · '+esc(d.warning||'')+'</div>'+
+    (setupRows.length?'<div style="margin-top:14px"><div class="label">Intraday Setup Attribution</div><div class="tablewrap"><table><thead><tr><th>Setup</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th><th>P/L</th></tr></thead><tbody>'+setupRows.map(([name,s])=>'<tr><td><strong>'+esc(name)+'</strong></td><td>'+s.trades+'</td><td>'+pct(s.win_rate)+'</td><td class="'+((s.avg_return||0)>=0?'positive':'negative')+'">'+pct(s.avg_return)+'</td><td class="'+((s.pnl||0)>=0?'positive':'negative')+'">'+money(s.pnl)+'</td></tr>').join('')+'</tbody></table></div></div>':'');
+  }catch(e){box.className='error';box.textContent=e.message||'Intraday backtest failed'}
+  finally{btn.disabled=false}
+}
+
 async function runBacktest(){
   const btn=document.getElementById('backtest'),box=document.getElementById('backtestout');
   btn.disabled=true;box.className='empty';box.textContent='Running walk-forward research test… this is heavier than a normal scan.';
@@ -480,6 +510,7 @@ document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('preflight').addEventListener('click',runPreflight);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
 document.getElementById('performance').addEventListener('click',loadPerformance);
+document.getElementById('intradaybacktest').addEventListener('click',runIntradayBacktest);
 document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('emergency').addEventListener('click',emergencyClose);
 document.getElementById('paperbuy').addEventListener('click',paperBuy);
