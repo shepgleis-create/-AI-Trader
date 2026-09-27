@@ -56,7 +56,7 @@
       </div>
       <div class="card wide">
         <div class="label">Decision Engine</div>
-        <p class="muted">Uses the OpenAI LLM when available. If OpenAI billing is unavailable, it automatically falls back to the quantitative strategy instead of stopping the trader.</p>
+        <p class="muted">Uses Gemini 3.8 Flash when available. If Gemini is unavailable, it automatically falls back to the quantitative strategy instead of stopping the trader.</p>
         <button id="aianalyze">Run Decision Analysis</button>
         <div id="aiout" class="empty">No decision analysis run yet.</div>
       </div>
@@ -69,7 +69,7 @@
       <div class="card wide">
         <div class="label">Automation</div>
         <div class="value" style="font-size:20px">Autonomous agent · OFF by default</div>
-        <p class="muted">When enabled, the scheduled cycle scans the market, uses OpenAI when available or the quant fallback when it is not, applies the hard risk gate, and can submit the paper order automatically. It also manages −3% stop exits and +6% profit exits.</p>
+        <p class="muted">When enabled, the scheduled cycle scans the market, uses Gemini when available or the quant fallback when it is not, applies the hard risk gate, and can submit the paper order automatically. It also manages −3% stop exits and +6% profit exits.</p>
       </div>
       <div class="card wide">
         <div class="label">Recent Paper Orders</div>
@@ -229,7 +229,7 @@
         '<div style="margin-top:6px">Confidence: '+x.confidence+'/100</div>' +
         '<div class="muted" style="margin-top:8px">'+x.rationale+'</div>' +
         '<div class="muted" style="margin-top:8px;font-size:12px">Source: '+(d.source || 'LLM')+' · '+d.model+'</div>' +
-        (d.llm_error ? '<div class="muted" style="margin-top:6px;font-size:12px">OpenAI unavailable: '+d.llm_error+'</div>' : '');
+        (d.llm_error ? '<div class="muted" style="margin-top:6px;font-size:12px">Gemini unavailable: '+d.llm_error+'</div>' : '');
     } catch (e) {
       box.className = 'error';
       box.textContent = e.message || 'AI analysis failed.';
