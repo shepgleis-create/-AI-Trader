@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   const alpacaKey = process.env.ALPACA_API_KEY;
   const alpacaSecret = process.env.ALPACA_SECRET_KEY;
   const baseUrl = process.env.ALPACA_BASE_URL || 'https://paper-api.alpaca.markets';
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
 
   if (!alpacaKey || !alpacaSecret) return res.status(500).json({ error: 'Missing Alpaca credentials' });
   if (!baseUrl.includes('paper-api.alpaca.markets')) {
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
 
     if (!eligible.length) {
       return res.status(200).json({
-        model: 'gpt-5.6-luna',
+        model: 'gemini-3.8-flash',
         decision: { action: 'SKIP', symbol: '', confidence: 100, rationale: 'No scanner candidates met the minimum review threshold.' },
         candidates: []
       });
@@ -45,20 +45,20 @@ export default async function handler(req, res) {
     let source = 'QUANT_FALLBACK';
     let llm_error = null;
 
-    if (openaiKey) {
+    if (geminiKey) {
       try {
         decision = await getAiTradeDecision({
-          apiKey: openaiKey,
+          apiKey: geminiKey,
           candidates: eligible,
           positions: Array.isArray(positions) ? positions : [],
           account
         });
         source = 'LLM';
       } catch (error) {
-        llm_error = String(error?.message || 'OpenAI request failed').slice(0, 300);
+        llm_error = String(error?.message || 'Gemini request failed').slice(0, 300);
       }
     } else {
-      llm_error = 'OPENAI_API_KEY is not configured.';
+      llm_error = 'GEMINI_API_KEY is not configured.';
     }
 
     if (!decision) {
@@ -68,13 +68,13 @@ export default async function handler(req, res) {
             action: 'BUY',
             symbol: best.symbol,
             confidence: Math.min(95, Math.max(60, best.score)),
-            rationale: 'OpenAI is unavailable, so the quantitative fallback selected the highest-scoring candidate that passed the hard entry threshold.'
+            rationale: 'Gemini is unavailable, so the quantitative fallback selected the highest-scoring candidate that passed the hard entry threshold.'
           }
         : {
             action: 'SKIP',
             symbol: '',
             confidence: 80,
-            rationale: 'OpenAI is unavailable and no candidate passed the hard quantitative entry threshold.'
+            rationale: 'Gemini is unavailable and no candidate passed the hard quantitative entry threshold.'
           };
     }
 
