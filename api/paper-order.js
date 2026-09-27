@@ -2,6 +2,7 @@ import { requireDashboardAuth } from '../lib/auth.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getIntradayConfirmation } from '../lib/intraday.js';
+import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
 const ENTRY_LIMIT_CUSHION_PCT = 0.001;
 
@@ -75,9 +76,9 @@ export default async function handler(req, res) {
     historyUrl.searchParams.set('period','1M');
     historyUrl.searchParams.set('timeframe','1D');
 
-    const [accountRes, clockRes, positionsRes, ordersRes, recentOrdersRes, historyRes, asset] = await Promise.all([
+    const [accountRes, clockPack, positionsRes, ordersRes, recentOrdersRes, historyRes, asset] = await Promise.all([
       fetch(`${baseUrl}/v2/account`, { headers }),
-      fetch(`${baseUrl}/v2/clock`, { headers }),
+      fetchMarketClock(baseUrl, headers),
       fetch(`${baseUrl}/v2/positions`, { headers }),
       fetch(`${baseUrl}/v2/orders?status=open&limit=100&nested=true`, { headers }),
       fetch(`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`, { headers }),
@@ -85,31 +86,26 @@ export default async function handler(req, res) {
       getAsset(symbol, baseUrl, headers)
     ]);
 
-    const [account, clock, positionsRaw, ordersRaw, recentOrdersRaw, historyRaw] = await Promise.all([
+    const [account, positionsRaw, ordersRaw, recentOrdersRaw, historyRaw] = await Promise.all([
       accountRes.json().catch(() => ({})),
-      clockRes.json().catch(() => ({})),
       positionsRes.json().catch(() => ([])),
       ordersRes.json().catch(() => ([])),
       recentOrdersRes.json().catch(() => ([])),
       historyRes.json().catch(() => ({}))
     ]);
+    const clock=clockPack.data||{};
 
     const checks = [
-      { name: 'account', response: accountRes, body: account },
-      { name: 'clock', response: clockRes, body: clock },
-      { name: 'positions', response: positionsRes, body: positionsRaw },
-      { name: 'open_orders', response: ordersRes, body: ordersRaw },
-      { name: 'recent_orders', response: recentOrdersRes, body: recentOrdersRaw }
-    ].map(x => ({
-      name: x.name,
-      ok: x.response.ok,
-      status: x.response.status,
-      message: x.response.ok ? null : String(x.body?.message || x.body?.error || x.response.statusText || 'request failed').slice(0,180)
-    }));
+      { name: 'account', ok: accountRes.ok, status: accountRes.status, message: accountRes.ok?null:String(account?.message||account?.error||accountRes.statusText||'request failed').slice(0,180) },
+      { name: 'clock', ok: clockPack.ok, status: clockPack.status||null, message: clockPack.ok?null:String(clockPack.error||'market clock failed').slice(0,180) },
+      { name: 'positions', ok: positionsRes.ok, status: positionsRes.status, message: positionsRes.ok?null:String(positionsRaw?.message||positionsRaw?.error||positionsRes.statusText||'request failed').slice(0,180) },
+      { name: 'open_orders', ok: ordersRes.ok, status: ordersRes.status, message: ordersRes.ok?null:String(ordersRaw?.message||ordersRaw?.error||ordersRes.statusText||'request failed').slice(0,180) },
+      { name: 'recent_orders', ok: recentOrdersRes.ok, status: recentOrdersRes.status, message: recentOrdersRes.ok?null:String(recentOrdersRaw?.message||recentOrdersRaw?.error||recentOrdersRes.statusText||'request failed').slice(0,180) }
+    ];
     const failed = checks.filter(x => !x.ok);
     if (failed.length) {
       return res.status(502).json({
-        error: 'Alpaca paper-order check failed — ' + failed.map(x => `${x.name} HTTP ${x.status}${x.message ? ': ' + x.message : ''}`).join(' · '),
+        error: 'Alpaca paper-order check failed — ' + failed.map(x => `${x.name}${x.status?' HTTP '+x.status:''}${x.message ? ': ' + x.message : ''}`).join(' · '),
         checks
       });
     }
