@@ -617,7 +617,8 @@ export default async function handler(req, res) {
 
     const stopPrice = priceRound(px * (1 - sizing.stop_pct));
     const takeProfitPrice = priceRound(px * (1 + sizing.take_profit_pct));
-    const clientId = `aitr-${source === 'LLM' ? 'g' : 'q'}-${pick.symbol.toLowerCase()}-s${pick.score}-c${Math.round(decision.confidence)}-${String(Date.now()).slice(-7)}`;
+    const refCents = Math.max(1, Math.round(px * 100));
+    const clientId = `aitr-${source === 'LLM' ? 'g' : 'q'}-${pick.symbol.toLowerCase()}-s${pick.score}-c${Math.round(decision.confidence)}-p${refCents}-${String(Date.now()).slice(-7)}`.slice(0,48);
 
     const planned = {
       type: enabled ? 'entry' : 'entry_dry_run',
