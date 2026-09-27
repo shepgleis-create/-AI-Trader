@@ -37,6 +37,178 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
 #loginCard{width:min(440px,100%);background:#121720;border:1px solid #2b3442;border-radius:20px;padding:22px}
 #loginCard input{width:100%;background:#0b0f15;border:1px solid #303a48;color:#fff;border-radius:13px;padding:14px 15px;font-size:16px;margin-top:12px}
 .hidden{display:none!important}
+
+/* === Workspace shell / navigation redesign === */
+:root{
+  --rail:#0a0d12;
+  --panel:#111722;
+  --panel2:#151c28;
+  --border:#273141;
+  --text:#f7f9fc;
+  --muted:#909baa;
+  --accent:#f5f7fa;
+}
+html{background:#080a0e}
+body{padding:0;overflow-x:hidden}
+.app-shell{min-height:100vh}
+.sidebar{
+  position:fixed;inset:0 auto 0 0;width:244px;z-index:90;
+  background:linear-gradient(180deg,#0c1016 0%,#080b10 100%);
+  border-right:1px solid #202936;
+  padding:18px 14px max(20px,env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;
+}
+.sidebar-brand{display:flex;align-items:center;gap:11px;padding:8px 8px 18px}
+.brand-mark{
+  width:35px;height:35px;border-radius:11px;background:#f4f6f9;color:#0b0d10;
+  display:grid;place-items:center;font-weight:950;letter-spacing:-1px;font-size:17px;flex:0 0 auto
+}
+.brand-name{font-weight:850;letter-spacing:-.4px;font-size:17px}
+.brand-sub{font-size:10px;color:#768294;margin-top:2px;letter-spacing:.08em;text-transform:uppercase}
+.sidebar-toggle{
+  width:38px;height:38px;padding:0;margin:0 0 10px;background:#141b25;color:#dbe2ec;
+  border:1px solid #263142;display:none;align-items:center;justify-content:center;font-size:21px
+}
+.nav-section-title{
+  padding:14px 10px 7px;color:#5f6b7b;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;font-weight:800
+}
+.nav-btn{
+  width:100%;margin:2px 0;padding:10px 11px;border-radius:11px;background:transparent;color:#8f9aaa;
+  display:flex;align-items:center;gap:11px;text-align:left;border:1px solid transparent;
+  font-size:13px;font-weight:720;transition:background .16s,border-color .16s,color .16s
+}
+.nav-btn:hover{background:#111823;color:#eef2f8}
+.nav-btn.active{background:#171f2b;border-color:#2b3749;color:#fff}
+.nav-icon{
+  width:22px;height:22px;border-radius:7px;display:grid;place-items:center;flex:0 0 auto;
+  font-size:12px;font-weight:900;color:#aab4c3;background:#111722;border:1px solid #222d3b
+}
+.nav-btn.active .nav-icon{background:#eef2f7;color:#0b0e13;border-color:#eef2f7}
+.nav-sub{padding-left:12px}
+.nav-sub .nav-btn{padding:8px 10px;font-size:12px}
+.sidebar-foot{margin-top:auto;padding:16px 8px 4px}
+.sidebar-mode{display:flex;align-items:center;gap:8px;color:#aeb8c5;font-size:11px;font-weight:800}
+.sidebar-mode .dot{box-shadow:0 0 0 4px rgba(244,185,66,.08)}
+.sidebar-backdrop{display:none}
+
+.main-shell{min-height:100vh;margin-left:244px}
+.wrap{max-width:1380px;margin:0 auto;padding:24px 28px 70px}
+.workspace-head{
+  display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin:0 0 14px;
+  padding-top:max(2px,env(safe-area-inset-top))
+}
+.workspace-eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#697687;font-weight:800;margin-bottom:5px}
+.workspace-head h1{font-size:29px;letter-spacing:-.8px;margin:0}
+.workspace-sub{color:#8994a4;margin-top:5px;font-size:14px}
+.workspace-actions{display:flex;align-items:center;gap:9px}
+.workspace-actions .badge{white-space:nowrap}
+.workspace-actions #refresh{
+  width:auto;margin:0;padding:10px 14px;border-radius:11px;font-size:13px;background:#f4f6f9
+}
+.status-strip{
+  display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;padding:9px 10px;
+  border:1px solid #202a38;background:#0c1118;border-radius:13px
+}
+.status-chip{
+  display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:9px;
+  background:#111720;border:1px solid #202a37;font-size:10px;font-weight:800;color:#9aa5b4
+}
+.status-chip b{color:#e9edf3;font-size:10px}
+.status-led{width:6px;height:6px;border-radius:50%;background:#667386}
+.status-chip.positive .status-led{background:#57d58e}
+.status-chip.negative .status-led{background:#ff7777}
+.status-chip.warning .status-led{background:#f4c45e}
+
+.page-view{display:none}
+.page-view.active{display:block;animation:pageIn .18s ease-out}
+@keyframes pageIn{from{opacity:.55;transform:translateY(4px)}to{opacity:1;transform:none}}
+.page-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}
+.page-grid>.card{grid-column:span 4}
+.page-grid>.card.wide{grid-column:1/-1}
+.page-grid>.card.span2{grid-column:span 8}
+#page-overview-grid>.card:nth-child(-n+6){grid-column:span 4}
+.card{
+  background:linear-gradient(180deg,rgba(19,25,35,.98),rgba(15,20,29,.98));
+  border-color:#263142;border-radius:16px;box-shadow:0 10px 35px rgba(0,0,0,.13)
+}
+.card p.muted{line-height:1.48}
+.card>button{max-width:520px}
+.overview-quick{
+  grid-column:1/-1!important;display:grid;grid-template-columns:1.4fr 2fr;gap:16px;align-items:center
+}
+.quick-copy h2{font-size:18px;margin:4px 0 5px;letter-spacing:-.35px}
+.quick-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.quick-actions button{
+  margin:0;padding:11px 10px;background:#171f2b;color:#dfe5ed;border:1px solid #2a3546;font-size:12px
+}
+.quick-actions button:hover{background:#1d2735}
+.page-empty-note{grid-column:1/-1;color:#7f8a99;padding:22px;border:1px dashed #2a3441;border-radius:14px}
+#legacyGrid.workspace-staged{display:none}
+#error{margin:16px 0 0}
+
+.mobile-rail-title{display:none}
+@media(max-width:1050px){
+  .sidebar{width:208px}
+  .main-shell{margin-left:208px}
+  .page-grid>.card{grid-column:span 6}
+  #page-overview-grid>.card:nth-child(-n+6){grid-column:span 6}
+  .quick-actions{grid-template-columns:1fr 1fr}
+}
+@media(max-width:760px){
+  body{padding:0}
+  .sidebar{
+    width:58px;padding:calc(env(safe-area-inset-top) + 8px) 7px max(12px,env(safe-area-inset-bottom));
+    align-items:stretch;overflow:visible;transition:width .2s ease,box-shadow .2s ease
+  }
+  .sidebar-toggle{display:flex}
+  .sidebar-brand{padding:0 4px 12px;justify-content:center}
+  .brand-mark{width:36px;height:36px}
+  .brand-copy,.nav-section-title,.nav-label,.sidebar-mode span:not(.dot){display:none}
+  .nav-btn{justify-content:center;padding:9px 7px}
+  .nav-sub{padding-left:0}
+  .nav-icon{width:31px;height:31px;border-radius:9px}
+  .sidebar-foot{padding:10px 4px 2px}
+  .sidebar-mode{justify-content:center}
+  .main-shell{margin-left:58px}
+  .wrap{padding:calc(env(safe-area-inset-top) + 15px) 13px calc(74px + env(safe-area-inset-bottom))}
+  .workspace-head{align-items:center}
+  .workspace-eyebrow{display:none}
+  .workspace-head h1{font-size:24px}
+  .workspace-sub{font-size:12px;max-width:240px}
+  .workspace-actions .badge{display:none}
+  .workspace-actions #refresh{padding:9px 11px;font-size:0}
+  .workspace-actions #refresh::after{content:'↻';font-size:18px}
+  .status-strip{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;margin-bottom:14px}
+  .status-strip::-webkit-scrollbar{display:none}
+  .status-chip{flex:0 0 auto}
+  .page-grid{grid-template-columns:1fr 1fr;gap:9px}
+  .page-grid>.card,.page-grid>.card.span2{grid-column:1/-1}
+  #page-overview-grid>.card:nth-child(-n+6){grid-column:span 1;padding:14px 13px;min-height:108px}
+  #page-overview-grid>.card:nth-child(-n+6) .label{font-size:9px}
+  #page-overview-grid>.card:nth-child(-n+6) .value{font-size:20px}
+  .overview-quick{grid-template-columns:1fr!important}
+  .quick-actions{grid-template-columns:1fr 1fr}
+  table{min-width:720px}
+  .sidebar.expanded{
+    width:min(292px,82vw);box-shadow:24px 0 60px rgba(0,0,0,.58);align-items:stretch
+  }
+  .sidebar.expanded .sidebar-brand{justify-content:flex-start;padding-left:5px}
+  .sidebar.expanded .brand-copy,
+  .sidebar.expanded .nav-section-title,
+  .sidebar.expanded .nav-label,
+  .sidebar.expanded .sidebar-mode span:not(.dot){display:block}
+  .sidebar.expanded .nav-btn{justify-content:flex-start}
+  .sidebar.expanded .nav-sub{padding-left:12px}
+  .sidebar.expanded .sidebar-mode{justify-content:flex-start}
+  .sidebar-backdrop.visible{display:block;position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:80}
+}
+@media(max-width:430px){
+  .workspace-sub{max-width:190px}
+  .quick-actions{grid-template-columns:1fr}
+  #page-overview-grid>.card:nth-child(-n+6){min-height:102px}
+}
+
 </style>
 </head>
 <body>
@@ -50,15 +222,79 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
     <div id="loginError" class="error"></div>
   </div>
 </div>
-<main class="wrap">
-  <div class="top">
-    <div><h1>AI Trader</h1><div class="sub">Autonomous paper-trading research system</div></div>
-    <div class="badge"><span class="dot"></span>PAPER ONLY</div>
-  </div>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Open navigation">≡</button>
+    <div class="sidebar-brand">
+      <div class="brand-mark">AI</div>
+      <div class="brand-copy">
+        <div class="brand-name">AI Trader</div>
+        <div class="brand-sub">Research OS</div>
+      </div>
+    </div>
 
-  <button id="refresh">Refresh System</button>
+    <div class="nav-section-title">Workspace</div>
+    <button class="nav-btn active" data-page="overview"><span class="nav-icon">O</span><span class="nav-label">Overview</span></button>
+    <button class="nav-btn" data-page="portfolio"><span class="nav-icon">P</span><span class="nav-label">Portfolio</span></button>
 
-  <section class="grid">
+    <div class="nav-section-title">Markets</div>
+    <div class="nav-sub">
+      <button class="nav-btn" data-page="markets-long"><span class="nav-icon">↑</span><span class="nav-label">Long Stocks</span></button>
+      <button class="nav-btn" data-page="markets-short"><span class="nav-icon">↓</span><span class="nav-label">Shorts</span></button>
+      <button class="nav-btn" data-page="markets-crypto"><span class="nav-icon">₿</span><span class="nav-label">Crypto</span></button>
+      <button class="nav-btn" data-page="markets-options"><span class="nav-icon">Ω</span><span class="nav-label">Options</span></button>
+      <button class="nav-btn" data-page="markets-ai"><span class="nav-icon">✦</span><span class="nav-label">AI Router</span></button>
+    </div>
+
+    <div class="nav-section-title">Operations</div>
+    <button class="nav-btn" data-page="automation"><span class="nav-icon">A</span><span class="nav-label">Automation</span></button>
+    <button class="nav-btn" data-page="research"><span class="nav-icon">R</span><span class="nav-label">Research</span></button>
+    <button class="nav-btn" data-page="history"><span class="nav-icon">H</span><span class="nav-label">History</span></button>
+    <button class="nav-btn" data-page="system"><span class="nav-icon">S</span><span class="nav-label">System & Risk</span></button>
+
+    <div class="sidebar-foot">
+      <div class="sidebar-mode"><span class="dot"></span><span>PAPER ONLY</span></div>
+    </div>
+  </aside>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <div class="main-shell">
+    <main class="wrap">
+      <header class="workspace-head">
+        <div>
+          <div class="workspace-eyebrow">AI Trader</div>
+          <h1 id="workspaceTitle">Overview</h1>
+          <div class="workspace-sub" id="workspaceSubtitle">Account health, market state and the things that need your attention.</div>
+        </div>
+        <div class="workspace-actions">
+          <div class="badge"><span class="dot"></span>PAPER ONLY</div>
+          <button id="refresh">Refresh</button>
+        </div>
+      </header>
+
+      <div class="status-strip">
+        <div class="status-chip" id="workspaceMarket"><span class="status-led"></span><span>Market</span><b>—</b></div>
+        <div class="status-chip" id="workspaceAuto"><span class="status-led"></span><span>Automation</span><b>—</b></div>
+        <div class="status-chip" id="workspaceRisk"><span class="status-led"></span><span>Risk</span><b>—</b></div>
+        <div class="status-chip" id="workspaceAI"><span class="status-led"></span><span>Gemini</span><b>—</b></div>
+        <div class="status-chip" id="workspaceDB"><span class="status-led"></span><span>Memory</span><b>—</b></div>
+      </div>
+
+      <section id="pageHost">
+        <section class="page-view active" data-view="overview"><div class="page-grid" id="page-overview-grid"></div></section>
+        <section class="page-view" data-view="portfolio"><div class="page-grid" id="page-portfolio-grid"></div></section>
+        <section class="page-view" data-view="markets-long"><div class="page-grid" id="page-markets-long-grid"></div></section>
+        <section class="page-view" data-view="markets-short"><div class="page-grid" id="page-markets-short-grid"></div></section>
+        <section class="page-view" data-view="markets-crypto"><div class="page-grid" id="page-markets-crypto-grid"></div></section>
+        <section class="page-view" data-view="markets-options"><div class="page-grid" id="page-markets-options-grid"></div></section>
+        <section class="page-view" data-view="markets-ai"><div class="page-grid" id="page-markets-ai-grid"></div></section>
+        <section class="page-view" data-view="automation"><div class="page-grid" id="page-automation-grid"></div></section>
+        <section class="page-view" data-view="research"><div class="page-grid" id="page-research-grid"></div></section>
+        <section class="page-view" data-view="history"><div class="page-grid" id="page-history-grid"></div></section>
+        <section class="page-view" data-view="system"><div class="page-grid" id="page-system-grid"></div></section>
+      </section>
+
+      <section class="grid" id="legacyGrid">
     <div class="card"><div class="label">Portfolio</div><div class="value" id="portfolio">—</div></div>
     <div class="card"><div class="label">Cash</div><div class="value" id="cash">—</div></div>
     <div class="card"><div class="label">Day P/L</div><div class="value" id="daypl">—</div></div>
@@ -256,9 +492,11 @@ th{color:#8792a1;font-weight:600}.pill{display:inline-block;border:1px solid #32
       <div class="kv"><span class="muted">Crypto calibration</span><strong>$25 spot-long · high pump-risk blocked · app-managed −5% / +10%</strong></div>
       <div class="kv"><span class="muted">Options calibration</span><strong>Long calls/puts only · 1 contract · max $100 premium · app-managed −35% / +70%</strong></div>
     </div>
-  </section>
-  <p id="error" class="error"></p>
-</main>
+      </section>
+      <p id="error" class="error"></p>
+    </main>
+  </div>
+</div>
 
 <script>
 function showLogin(message=''){
@@ -326,6 +564,183 @@ let topOptionDirection=null;
 let marketIsOpen=false;
 let lastRegime=null;
 
+const workspacePages={
+  overview:{
+    title:'Overview',
+    subtitle:'Account health, market state and the things that need your attention.'
+  },
+  portfolio:{
+    title:'Portfolio',
+    subtitle:'Positions, exposure and actual paper-account performance.'
+  },
+  'markets-long':{
+    title:'Long Stocks',
+    subtitle:'Bullish U.S. stock and ETF scanning with guarded paper execution.'
+  },
+  'markets-short':{
+    title:'Shorts',
+    subtitle:'Bearish setups, borrow status, squeeze risk and protected paper shorts.'
+  },
+  'markets-crypto':{
+    title:'Crypto',
+    subtitle:'Spot crypto momentum, liquidity and pump-risk research.'
+  },
+  'markets-options':{
+    title:'Options',
+    subtitle:'Call and put chains, Greeks, premium risk and one-contract calibration.'
+  },
+  'markets-ai':{
+    title:'AI Router',
+    subtitle:'Compare the best loaded opportunity across every supported market lane.'
+  },
+  automation:{
+    title:'Automation',
+    subtitle:'Autonomous cycles, Gemini decisions and current execution behavior.'
+  },
+  research:{
+    title:'Research',
+    subtitle:'Benchmarks, robustness, Decision Memory and strategy attribution.'
+  },
+  history:{
+    title:'History',
+    subtitle:'Execution journal and tracked paper orders across every asset lane.'
+  },
+  system:{
+    title:'System & Risk',
+    subtitle:'Connectivity, diagnostics, circuit breakers and emergency controls.'
+  }
+};
+
+function setWorkspaceChip(name,value,state=''){
+  const el=document.getElementById('workspace'+name[0].toUpperCase()+name.slice(1));
+  if(!el)return;
+  el.classList.remove('positive','negative','warning');
+  if(state)el.classList.add(state);
+  const b=el.querySelector('b');
+  if(b)b.textContent=value;
+}
+
+function updateWorkspaceStatus(d){
+  const open=Boolean(d?.market?.is_open);
+  setWorkspaceChip('market',open?'OPEN':'CLOSED',open?'positive':'');
+  const auto=Boolean(d?.automation_enabled);
+  setWorkspaceChip('auto',auto?'ON':'OFF',auto?'positive':'warning');
+  const ai=Boolean(d?.gemini_configured);
+  setWorkspaceChip('aI',ai?'READY':'MISSING',ai?'positive':'negative');
+
+  const r=d?.risk||{};
+  const locked=Boolean(r.daily_loss_lock||r.exposure_lock||r.position_lock);
+  setWorkspaceChip('risk',locked?'LOCKED':'CLEAR',locked?'negative':'positive');
+}
+
+function closeSidebar(){
+  const side=document.getElementById('sidebar');
+  const backdrop=document.getElementById('sidebarBackdrop');
+  side?.classList.remove('expanded');
+  backdrop?.classList.remove('visible');
+}
+function toggleSidebar(){
+  const side=document.getElementById('sidebar');
+  const backdrop=document.getElementById('sidebarBackdrop');
+  const expanded=!side?.classList.contains('expanded');
+  side?.classList.toggle('expanded',expanded);
+  backdrop?.classList.toggle('visible',expanded);
+}
+function showWorkspacePage(page,opts={}){
+  if(!workspacePages[page])page='overview';
+  document.querySelectorAll('.page-view').forEach(v=>v.classList.toggle('active',v.dataset.view===page));
+  document.querySelectorAll('.nav-btn[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+  const meta=workspacePages[page];
+  document.getElementById('workspaceTitle').textContent=meta.title;
+  document.getElementById('workspaceSubtitle').textContent=meta.subtitle;
+  sessionStorage.setItem('ai_trader_page',page);
+  if(opts.scroll!==false)window.scrollTo({top:0,behavior:'smooth'});
+  if(window.innerWidth<=760)closeSidebar();
+}
+
+function routeWorkspaceCards(){
+  const legacy=document.getElementById('legacyGrid');
+  if(!legacy)return;
+
+  const route={
+    'Portfolio':'overview',
+    'Cash':'overview',
+    'Day P/L':'overview',
+    'Exposure':'overview',
+    'Market':'overview',
+    'Automation':'overview',
+    'Risk Control':'overview',
+
+    'Open Positions':'portfolio',
+    'Portfolio Exposure Map':'portfolio',
+    'Actual Paper Performance vs SPY':'portfolio',
+
+    'Full U.S. Market Scanner':'markets-long',
+    'Paper Execution Test':'markets-long',
+
+    'Bearish Equity + ETF Lab':'markets-short',
+    'Crypto Radar':'markets-crypto',
+    'Options Chain Lab':'markets-options',
+    'Multi-Asset AI Router':'markets-ai',
+
+    'Automation Cycle':'automation',
+    'Gemini Decision + Hard Risk Gate':'automation',
+
+    'Benchmark Lab':'research',
+    'Research Evidence Gate':'research',
+    'Intraday Calibration Backtest':'research',
+    'Research Backtest':'research',
+    'Out-of-Sample Robustness Lab':'research',
+    'Strategy Attribution':'research',
+    'Decision Memory':'research',
+    'Filter Outcome Attribution':'research',
+
+    'Execution Journal':'history',
+
+    'System Preflight':'system',
+    'Alpaca Diagnostics':'system',
+    'Account Circuit Breakers':'system',
+    'Emergency Paper Kill':'system',
+    'Current Safety Policy':'system'
+  };
+
+  [...legacy.children].forEach(card=>{
+    if(!card.classList?.contains('card'))return;
+    const label=card.querySelector(':scope > .label')?.textContent?.trim()||'';
+    const page=route[label]||'system';
+    const target=document.getElementById('page-'+page+'-grid');
+    if(target)target.appendChild(card);
+  });
+
+  const overview=document.getElementById('page-overview-grid');
+  if(overview&&!document.getElementById('overviewQuickActions')){
+    const quick=document.createElement('div');
+    quick.id='overviewQuickActions';
+    quick.className='card overview-quick';
+    quick.innerHTML=
+      '<div class="quick-copy"><div class="label">Quick Actions</div><h2>Everything important, without the giant scroll.</h2><div class="muted tiny">Jump straight into a market, your portfolio, or the research workspace.</div></div>'+
+      '<div class="quick-actions">'+
+        '<button type="button" data-goto="markets-long">Open Markets</button>'+
+        '<button type="button" data-goto="portfolio">Portfolio</button>'+
+        '<button type="button" data-goto="automation">Automation</button>'+
+        '<button type="button" data-goto="research">Research</button>'+
+      '</div>';
+    overview.appendChild(quick);
+  }
+
+  document.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>showWorkspacePage(b.dataset.goto)));
+  legacy.classList.add('workspace-staged');
+}
+
+function initWorkspace(){
+  routeWorkspaceCards();
+  document.querySelectorAll('.nav-btn[data-page]').forEach(b=>b.addEventListener('click',()=>showWorkspacePage(b.dataset.page)));
+  document.getElementById('sidebarToggle')?.addEventListener('click',toggleSidebar);
+  document.getElementById('sidebarBackdrop')?.addEventListener('click',closeSidebar);
+  const initial=sessionStorage.getItem('ai_trader_page')||'overview';
+  showWorkspacePage(initial,{scroll:false});
+}
+
 async function load(){
   const btn=document.getElementById('refresh'); btn.disabled=true;
   document.getElementById('error').textContent='';
@@ -343,6 +758,7 @@ async function load(){
     document.getElementById('automation').textContent=d.automation_enabled?'ON':'OFF';
     document.getElementById('automation').className='value '+(d.automation_enabled?'positive':'warning');
     document.getElementById('brain').textContent=d.gemini_configured?'Gemini configured':'Gemini key missing';
+    updateWorkspaceStatus(d);
 
     const locks=[];
     if(d.risk?.daily_loss_lock) locks.push('DAILY LOSS LOCK');
@@ -1160,6 +1576,7 @@ async function loadMemoryStatus(){
     if(!r.ok)throw new Error(d.error||'Decision Memory status failed');
 
     if(!d.configured){
+      setWorkspaceChip('dB','WAITING','warning');
       box.className='warning';
       box.innerHTML='<strong>DATABASE NOT CONNECTED YET</strong>'+
         '<div class="muted tiny" style="margin-top:6px">The Decision Memory code is deployed and waiting for a Postgres database. Trading continues normally; memory writes are safely skipped until storage is connected.</div>'+
@@ -1168,6 +1585,7 @@ async function loadMemoryStatus(){
     }
 
     const o=d.outcomes||{},counts=d.counts||{};
+    setWorkspaceChip('dB','ONLINE','positive');
     box.className='';
     box.innerHTML=
       '<div class="positive"><strong>DECISION MEMORY ONLINE</strong></div>'+
@@ -1184,6 +1602,7 @@ async function loadMemoryStatus(){
       '<div class="kv"><span class="muted">All-candidate 3D average</span><strong>'+(o.avg_3d==null?'—':pct(o.avg_3d))+'</strong></div>'+
       '<div class="kv"><span class="muted">All-candidate 5D average</span><strong>'+(o.avg_5d==null?'—':pct(o.avg_5d))+'</strong></div>';
   }catch(e){
+    setWorkspaceChip('dB','ERROR','negative');
     box.className='error';
     box.textContent=e.message||'Decision Memory status failed';
   }finally{if(btn)btn.disabled=false}
@@ -1288,6 +1707,7 @@ document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('robustnessLab').addEventListener('click',runRobustnessLab);
 document.getElementById('emergency').addEventListener('click',emergencyClose);
 document.getElementById('paperbuy').addEventListener('click',paperBuy);
+initWorkspace();
 hideLogin();
 (async()=>{
   try{
