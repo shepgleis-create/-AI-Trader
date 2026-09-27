@@ -2,6 +2,7 @@ import { requireDashboardAuth } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { fetchOptionsForUnderlying } from '../lib/multi-asset.js';
+import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
 const MAX_PREMIUM_DOLLARS=100;
 const MIN_QUALITY=75;
@@ -40,18 +41,18 @@ export default async function handler(req,res){
 
     const [ap,cp,pp,op,rp,hp]=await Promise.all([
       jf(`${base}/v2/account`,{headers:h(key,secret)}),
-      jf(`${base}/v2/clock`,{headers:h(key,secret)}),
+      fetchMarketClock(base,h(key,secret)),
       jf(`${base}/v2/positions`,{headers:h(key,secret)}),
       jf(`${base}/v2/orders?status=open&limit=100&nested=true`,{headers:h(key,secret)}),
       jf(`${base}/v2/orders?status=all&limit=500&direction=desc&nested=true`,{headers:h(key,secret)}),
       jf(historyUrl,{headers:h(key,secret)})
     ]);
 
-    if(!ap.r.ok||!cp.r.ok||!pp.r.ok||!op.r.ok||!rp.r.ok){
-      return res.status(502).json({error:'Could not complete options pre-trade checks'});
+    if(!ap.r.ok||!cp.ok||!pp.r.ok||!op.r.ok||!rp.r.ok){
+      return res.status(502).json({error:!cp.ok?`Market clock failed — ${cp.error||'unavailable'}`:'Could not complete options pre-trade checks'});
     }
 
-    const account=ap.d,clock=cp.d;
+    const account=ap.d,clock=cp.data||{};
     const positions=Array.isArray(pp.d)?pp.d:[];
     const openOrders=Array.isArray(op.d)?op.d:[];
     const recent=Array.isArray(rp.d)?rp.d:[];
