@@ -10,7 +10,6 @@ export default async function handler(req, res) {
   const openaiKey = process.env.OPENAI_API_KEY;
 
   if (!alpacaKey || !alpacaSecret) return res.status(500).json({ error: 'Missing Alpaca credentials' });
-  if (!openaiKey) return res.status(503).json({ error: 'Add OPENAI_API_KEY in Vercel to activate the LLM decision layer.' });
   if (!baseUrl.includes('paper-api.alpaca.markets')) {
     return res.status(403).json({ error: 'AI preview is paper-only.' });
   }
@@ -42,15 +41,47 @@ export default async function handler(req, res) {
       });
     }
 
-    const decision = await getAiTradeDecision({
-      apiKey: openaiKey,
-      candidates: eligible,
-      positions: Array.isArray(positions) ? positions : [],
-      account
-    });
+    let decision;
+    let source = 'QUANT_FALLBACK';
+    let llm_error = null;
+
+    if (openaiKey) {
+      try {
+        decision = await getAiTradeDecision({
+          apiKey: openaiKey,
+          candidates: eligible,
+          positions: Array.isArray(positions) ? positions : [],
+          account
+        });
+        source = 'LLM';
+      } catch (error) {
+        llm_error = String(error?.message || 'OpenAI request failed').slice(0, 300);
+      }
+    } else {
+      llm_error = 'OPENAI_API_KEY is not configured.';
+    }
+
+    if (!decision) {
+      const best = eligible[0];
+      decision = best && best.score >= 78
+        ? {
+            action: 'BUY',
+            symbol: best.symbol,
+            confidence: Math.min(95, Math.max(60, best.score)),
+            rationale: 'OpenAI is unavailable, so the quantitative fallback selected the highest-scoring candidate that passed the hard entry threshold.'
+          }
+        : {
+            action: 'SKIP',
+            symbol: '',
+            confidence: 80,
+            rationale: 'OpenAI is unavailable and no candidate passed the hard quantitative entry threshold.'
+          };
+    }
 
     return res.status(200).json({
-      model: decision.model,
+      source,
+      model: source === 'LLM' ? decision.model : 'quant-fallback-v1',
+      llm_error,
       decision,
       candidates: eligible.map(c => ({ symbol: c.symbol, score: c.score }))
     });
