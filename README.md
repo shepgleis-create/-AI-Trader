@@ -31,6 +31,9 @@ Candidate scoring includes:
 - average dollar liquidity
 - SPY market-regime adjustment
 - broad sector ETF leadership / laggards
+- inferred sector proxy for each candidate
+- 60-day beta versus SPY
+- overnight gap and move-from-open behavior
 
 ### Market regime
 SPY is used to classify the environment as:
@@ -82,6 +85,9 @@ Current calibration rules:
 - Market-stress lock for risk-off + very weak breadth
 - Broad-market volatility stress lock
 - Intraday chase protection for heavily extended names
+- Gap-fade and extreme-gap vetoes
+- High-beta veto and beta-based size reduction
+- Sector-cluster concentration guard
 - Calibration entry cap: $25
 - No shorts
 - No options
@@ -107,11 +113,20 @@ Sizing uses:
 
 The cap is intentionally tiny until the execution path is proven.
 
+### Intraday execution confirmation
+Immediately before an entry, the selected symbol is rechecked on 15-minute data:
+- session VWAP
+- recent ~45-minute momentum
+- same-session relative strength versus SPY
+
+The order is rejected if the daily setup is breaking down intraday.
+
 ### Broker-side protection
-New autonomous paper entries are submitted as Alpaca bracket orders where supported:
-- entry
+New autonomous paper entries are submitted as price-capped Alpaca limit bracket orders where supported:
+- limit entry capped slightly above the current ask/reference price
 - attached stop-loss
 - attached take-profit
+- stale unfilled autonomous entries are canceled after 20 minutes
 
 This is important because Vercel Hobby scheduling is not suitable for second-by-second risk management.
 
@@ -131,6 +146,15 @@ Automatic execution remains disabled while:
 `AUTO_TRADING_ENABLED=false`
 
 Vercel functions are configured with a 60-second maximum duration so full-market scans and research endpoints have more room to finish.
+
+### Portfolio exposure map
+Open positions can be analyzed by:
+- inferred sector ETF proxy
+- sector correlation
+- 60-day beta versus SPY
+- position-weighted portfolio beta
+
+This complements direct ticker-to-ticker correlation checks.
 
 ### Actual paper performance
 The dashboard also reads Alpaca's real paper portfolio history and compares the account against SPY over the latest month:
@@ -161,6 +185,15 @@ The dashboard includes a walk-forward research test with:
 
 Important limitation:
 The current backtest uses today's active/liquid universe. This introduces survivorship and selection bias. It is useful for research and rejecting weak strategies, but it is not institutional-grade evidence of future returns.
+
+### Confidence calibration
+Closed autonomous paper trades are grouped by:
+- Gemini confidence bucket
+- scanner-score bucket
+- Gemini versus quant fallback
+- realized entry slippage
+
+The system does not automatically retune thresholds from tiny samples. Research adaptation remains locked until at least 20 comparable closed trades are available.
 
 ### Execution journal
 Alpaca order history is used as the durable execution journal.
