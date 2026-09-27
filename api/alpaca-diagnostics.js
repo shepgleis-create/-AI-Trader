@@ -1,4 +1,5 @@
 import { requireDashboardAuth } from '../lib/auth.js';
+import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
 async function retryFetch(url,options={},attempts=3){
   let last=null;
@@ -53,7 +54,6 @@ export default async function handler(req,res){
 
   const tests=[
     ['Account',`${baseUrl}/v2/account`],
-    ['Market clock',`${baseUrl}/v2/clock`],
     ['Positions',`${baseUrl}/v2/positions`],
     ['Open orders',`${baseUrl}/v2/orders?status=open&limit=100&nested=true`],
     ['Recent orders',`${baseUrl}/v2/orders?status=all&limit=500&direction=desc&nested=true`],
@@ -62,6 +62,16 @@ export default async function handler(req,res){
   ];
 
   const results=[];
+  const clockStarted=Date.now();
+  const clockPack=await fetchMarketClock(baseUrl,headers);
+  results.push({
+    name:'Market clock',
+    ok:clockPack.ok,
+    status:clockPack.status||null,
+    elapsed_ms:Date.now()-clockStarted,
+    message:clockPack.ok?`Using ${clockPack.source||'clock'}`:String(clockPack.error||'Market clock failed').slice(0,220)
+  });
+
   for(const [name,url] of tests){
     results.push(await probe(name,url,headers));
     await new Promise(r=>setTimeout(r,80));
