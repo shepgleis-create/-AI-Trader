@@ -40,6 +40,11 @@ function isOpenOrderStatus(status) {
     .includes(String(status || '').toLowerCase());
 }
 
+function isAutonomousLongClientId(value) {
+  const id=String(value||'');
+  return id.startsWith('aitr-g-') || id.startsWith('aitr-q-');
+}
+
 function marketEntryWindow(clock) {
   const now = new Date(clock?.timestamp || Date.now());
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -192,7 +197,7 @@ export default async function handler(req, res) {
     const today = new Date().toISOString().slice(0,10);
     const autonomousParents = recentOrders.filter(o =>
       o?.side === 'buy' &&
-      String(o?.client_order_id || '').startsWith('aitr-')
+      isAutonomousLongClientId(o?.client_order_id)
     );
     const entriesToday = autonomousParents.filter(o =>
       String(o?.submitted_at || '').slice(0,10) === today
@@ -230,7 +235,7 @@ export default async function handler(req, res) {
     for (const o of openOrders) {
       if (
         o?.side !== 'buy' ||
-        !String(o?.client_order_id || '').startsWith('aitr-') ||
+        !isAutonomousLongClientId(o?.client_order_id) ||
         !o?.id
       ) continue;
 
@@ -312,7 +317,7 @@ export default async function handler(req, res) {
 
       const parent = autonomousParents.find(o =>
         o.symbol === p.symbol &&
-        String(o.client_order_id || '').startsWith('aitr-') &&
+        isAutonomousLongClientId(o.client_order_id) &&
         Array.isArray(o.legs)
       );
       if (!parent) continue;
