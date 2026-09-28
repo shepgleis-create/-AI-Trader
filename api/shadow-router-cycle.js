@@ -10,9 +10,15 @@ import {
   getAdaptiveResearchDataset,
   syncResearchChallengers,
   getActiveResearchChallengers,
-  recordResearchChallengerObservations
+  recordResearchChallengerObservations,
+  ensureSystemResearchChallenger,
+  recordDirectChallengerObservation
 } from '../lib/decision-memory.js';
 import { buildAdaptiveRecommendations } from '../lib/research-recommendations.js';
+import {
+  buildHistoricalRegimePriors,
+  buildRegimeEnsemble
+} from '../lib/regime-intelligence.js';
 
 function headers(key,secret){
   return {'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret};
@@ -226,17 +232,6 @@ export default async function handler(req,res){
       });
     }
 
-    const decision=await getMultiAssetAiDecision({
-      apiKey:gemini,
-      account,
-      positions,
-      longCandidate,
-      shortCandidate,
-      cryptoCandidate,
-      callOptionCandidate,
-      putOptionCandidate
-    });
-
     const lanes={
       LONG_EQUITY:compactLane(longCandidate),
       SHORT_EQUITY:compactLane(shortCandidate),
@@ -245,12 +240,44 @@ export default async function handler(req,res){
       LONG_PUT:compactLane(putOptionCandidate)
     };
 
+    let adaptiveDataset={configured:false,router:[]};
+    try{
+      adaptiveDataset=await getAdaptiveResearchDataset(1000);
+    }catch{}
+
+    const priorContext=buildHistoricalRegimePriors(
+      longScan?.regime||{},
+      adaptiveDataset?.router||[]
+    );
+
+    const decision=await getMultiAssetAiDecision({
+      apiKey:gemini,
+      account,
+      positions,
+      longCandidate,
+      shortCandidate,
+      cryptoCandidate,
+      callOptionCandidate,
+      putOptionCandidate,
+      regimeContext:priorContext.current,
+      historicalPriors:priorContext.lanes
+    });
+
+    const regimeEnsemble=buildRegimeEnsemble({
+      regime:longScan?.regime||{},
+      lanes,
+      aiDecision:decision,
+      historicalRows:adaptiveDataset?.router||[]
+    });
+
     const memory=await saveMultiAssetDecision({
       origin:'shadow_router',
       mode:'PAPER',
       shadow:true,
       execution:false,
       decision,
+      regime_ensemble:regimeEnsemble,
+      regime_experiment:regimeExperiment,
       hard_risk_clear:hardLocks.length===0,
       hard_locks:hardLocks,
       lanes,
@@ -261,6 +288,7 @@ export default async function handler(req,res){
         market_open:Boolean(clockPack.data?.is_open),
         clock_source:clockPack.source||null,
         long_regime:longScan?.regime||null,
+        regime_ensemble:regimeEnsemble,
         scan_cache:{
           long:Boolean(longScan?.cache_hit),
           short:Boolean(shortScan?.cache_hit),
@@ -268,6 +296,39 @@ export default async function handler(req,res){
         }
       }
     });
+
+    let regimeExperiment=null;
+    if(memory?.saved&&memory?.decision_id){
+      try{
+        regimeExperiment=await ensureSystemResearchChallenger({
+          experiment_id:'regime-ensemble-v1',
+          title:'Regime Ensemble v1 vs Gemini Router',
+          parameter_type:'REGIME_ENSEMBLE_V1',
+          config:{version:1},
+          minimum_1d:20,
+          minimum_5d:10,
+          meta:{
+            description:'Prospective paired comparison of Gemini baseline versus deterministic regime-aware ensemble.',
+            auto_apply:false
+          }
+        });
+        await recordDirectChallengerObservation({
+          experiment_id:'regime-ensemble-v1',
+          decision_id:memory.decision_id,
+          baseline_decision:decision,
+          challenger_decision:regimeEnsemble.decision,
+          context:{
+            regime:regimeEnsemble.regime,
+            lane_scores:regimeEnsemble.lane_scores,
+            prior_source:regimeEnsemble.prior_source,
+            matching_historical_decisions:regimeEnsemble.matching_historical_decisions,
+            disagrees_with_ai:regimeEnsemble.disagrees_with_ai
+          }
+        });
+      }catch(error){
+        regimeExperiment={error:String(error?.message||'Regime ensemble challenger write failed').slice(0,220)};
+      }
+    }
 
     const challengerResearch=await updateChallengerResearch(memory,decision,lanes);
 
