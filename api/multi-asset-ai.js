@@ -2,7 +2,14 @@ import { requireDashboardAuth } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { getMultiAssetAiDecision } from '../lib/multi-asset-ai.js';
-import { saveMultiAssetDecision } from '../lib/decision-memory.js';
+import {
+  saveMultiAssetDecision,
+  getAdaptiveResearchDataset
+} from '../lib/decision-memory.js';
+import {
+  buildHistoricalRegimePriors,
+  buildRegimeEnsemble
+} from '../lib/regime-intelligence.js';
 
 function sanitizeCandidate(x){
   if(!x||typeof x!=='object')return null;
@@ -68,11 +75,38 @@ export default async function handler(req,res){
       putOptionCandidate:sanitizeCandidate(req.body?.putOptionCandidate)
     };
 
+    let adaptiveDataset={configured:false,router:[]};
+    try{adaptiveDataset=await getAdaptiveResearchDataset(1000)}catch{}
+
+    const regimeContext=req.body?.regimeContext&&typeof req.body.regimeContext==='object'
+      ?req.body.regimeContext
+      :{};
+    const priors=buildHistoricalRegimePriors(regimeContext,adaptiveDataset?.router||[]);
+
     const decision=await getMultiAssetAiDecision({
       apiKey:gemini,
       account,
       positions,
-      ...supplied
+      ...supplied,
+      regimeContext:priors.current,
+      historicalPriors:priors.lanes
+    });
+
+    const lanes={
+      LONG_EQUITY:supplied.longCandidate,
+      SHORT_EQUITY:supplied.shortCandidate,
+      CRYPTO_LONG:supplied.cryptoCandidate,
+      LONG_CALL:supplied.callOptionCandidate||
+        (supplied.optionCandidate?.direction==='BULLISH'?supplied.optionCandidate:null),
+      LONG_PUT:supplied.putOptionCandidate||
+        (supplied.optionCandidate?.direction==='BEARISH'?supplied.optionCandidate:null)
+    };
+
+    const regimeEnsemble=buildRegimeEnsemble({
+      regime:regimeContext,
+      lanes,
+      aiDecision:decision,
+      historicalRows:adaptiveDataset?.router||[]
     });
 
     const hardLocks=[];
@@ -90,16 +124,21 @@ export default async function handler(req,res){
       decision,
       hard_risk_clear:hardLocks.length===0,
       hard_locks:hardLocks,
-      lanes:supplied,
+      lanes,
       account_risk:accountRisk,
       portfolio_risk:portfolioRisk,
-      meta:{source:'dashboard'}
+      meta:{
+        source:'dashboard',
+        long_regime:regimeContext,
+        regime_ensemble:regimeEnsemble
+      }
     });
 
     return res.status(200).json({
       mode:'PAPER_RESEARCH',
       execution:false,
       decision,
+      regime_ensemble:regimeEnsemble,
       memory,
       hard_risk_clear:hardLocks.length===0,
       hard_locks:hardLocks,
