@@ -63,7 +63,9 @@ export default async function handler(req,res){
       longCandidate:sanitizeCandidate(req.body?.longCandidate),
       shortCandidate:sanitizeCandidate(req.body?.shortCandidate),
       cryptoCandidate:sanitizeCandidate(req.body?.cryptoCandidate),
-      optionCandidate:sanitizeCandidate(req.body?.optionCandidate)
+      optionCandidate:sanitizeCandidate(req.body?.optionCandidate),
+      callOptionCandidate:sanitizeCandidate(req.body?.callOptionCandidate),
+      putOptionCandidate:sanitizeCandidate(req.body?.putOptionCandidate)
     };
 
     const decision=await getMultiAssetAiDecision({
