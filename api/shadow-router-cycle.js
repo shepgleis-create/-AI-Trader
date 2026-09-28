@@ -5,7 +5,14 @@ import { fetchShortScan, fetchCryptoScan, fetchOptionsForUnderlying } from '../l
 import { getMultiAssetAiDecision } from '../lib/multi-asset-ai.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
-import { saveMultiAssetDecision } from '../lib/decision-memory.js';
+import {
+  saveMultiAssetDecision,
+  getAdaptiveResearchDataset,
+  syncResearchChallengers,
+  getActiveResearchChallengers,
+  recordResearchChallengerObservations
+} from '../lib/decision-memory.js';
+import { buildAdaptiveRecommendations } from '../lib/research-recommendations.js';
 
 function headers(key,secret){
   return {'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret};
@@ -30,6 +37,38 @@ function compactLane(x){
   const y={...x};
   delete y.reasons;
   return y;
+}
+
+async function updateChallengerResearch(memory,decision,lanes){
+  if(!memory?.saved||!memory?.decision_id){
+    return {configured:memory?.configured??false,recorded:0};
+  }
+  try{
+    const dataset=await getAdaptiveResearchDataset(1000);
+    if(!dataset.configured)return {configured:false,recorded:0};
+
+    const recommendations=buildAdaptiveRecommendations(dataset);
+    const sync=await syncResearchChallengers(recommendations.recommendations||[]);
+    const experiments=await getActiveResearchChallengers();
+    const observations=await recordResearchChallengerObservations({
+      decision_id:memory.decision_id,
+      decision,
+      lanes,
+      experiments
+    });
+    return {
+      configured:true,
+      synced:sync,
+      active_experiments:experiments.length,
+      recorded:observations.recorded||0
+    };
+  }catch(error){
+    return {
+      configured:true,
+      recorded:0,
+      error:String(error?.message||'Challenger research update failed').slice(0,220)
+    };
+  }
 }
 
 export default async function handler(req,res){
@@ -179,7 +218,12 @@ export default async function handler(req,res){
           clock_source:clockPack.source||null
         }
       });
-      return res.status(200).json({ok:true,shadow:true,decision,memory,lane_errors:laneErrors});
+      const challengerResearch=await updateChallengerResearch(memory,decision,{});
+      return res.status(200).json({
+        ok:true,shadow:true,decision,memory,
+        challenger_research:challengerResearch,
+        lane_errors:laneErrors
+      });
     }
 
     const decision=await getMultiAssetAiDecision({
@@ -225,6 +269,8 @@ export default async function handler(req,res){
       }
     });
 
+    const challengerResearch=await updateChallengerResearch(memory,decision,lanes);
+
     return res.status(200).json({
       ok:true,
       mode:'PAPER_SHADOW',
@@ -239,7 +285,8 @@ export default async function handler(req,res){
       hard_locks:hardLocks,
       lanes,
       lane_errors:laneErrors,
-      memory
+      memory,
+      challenger_research:challengerResearch
     });
   }catch(error){
     return res.status(500).json({error:error?.message||'Shadow multi-asset router failed'});
