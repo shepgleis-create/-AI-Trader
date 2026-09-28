@@ -462,6 +462,14 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Shadow A/B Challenger Lab</div>
+      <p class="muted">Runs supported research changes prospectively against the unchanged baseline. Challengers never place extra orders and can never auto-promote themselves.</p>
+      <button id="challengerSync">Sync Supported Challengers</button>
+      <button id="challengerRefresh">Refresh Challenger Lab</button>
+      <div id="challengerLabOut" class="empty">No challenger experiments loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Intraday Calibration Backtest</div>
       <p class="muted">Closer to the live paper behavior: prior-day signals, entry after 9:45 ET, one trade per day, broker-style stop/target, and forced exit by 3:45 ET.</p>
       <button id="intradaybacktest">Run Intraday Calibration Backtest</button>
@@ -811,6 +819,7 @@ function routeWorkspaceCards(){
     'Benchmark Lab':'research',
     'Research Evidence Gate':'research',
     'Adaptive Research Recommendations':'research',
+    'Shadow A/B Challenger Lab':'research',
     'Intraday Calibration Backtest':'research',
     'Research Backtest':'research',
     'Out-of-Sample Robustness Lab':'research',
@@ -843,7 +852,7 @@ function routeWorkspaceCards(){
     {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab','Trade Quality · MAE / MFE']},
     {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
     {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Shadow Outcome Scorecard','Filter Outcome Attribution']},
-    {key:'recommendations',label:'Recommendations',labels:['Adaptive Research Recommendations']}
+    {key:'recommendations',label:'Recommendations',labels:['Adaptive Research Recommendations','Shadow A/B Challenger Lab']}
   ],'performance');
 
   setupSubWorkspace('system',[
@@ -1430,6 +1439,103 @@ async function loadResearchRecommendations(){
   }catch(e){
     box.className='error';box.textContent=e.message||'Research recommendation analysis failed';
   }finally{btn.disabled=false}
+}
+
+function challengerConfigText(exp){
+  const c=exp?.config||{};
+  if(exp?.parameter_type==='ROUTER_CONFIDENCE_FLOOR')return 'Router confidence ≥ '+Number(c.threshold||0);
+  if(exp?.parameter_type==='LONG_SCANNER_FLOOR')return 'Long scanner score ≥ '+Number(c.threshold||0);
+  if(exp?.parameter_type==='BLOCK_SELECTED_LANE')return 'De-emphasize '+String(c.lane||'lane')+' → SKIP';
+  return JSON.stringify(c);
+}
+
+function challengerStatsText(x){
+  if(!x||!Number(x.samples||0))return 'No graded affected decisions yet.';
+  const ci=(x.ci_low==null||x.ci_high==null)
+    ?'CI —'
+    :'95% CI '+pct(x.ci_low)+' → '+pct(x.ci_high);
+  return 'N '+Number(x.samples||0)+
+    ' · baseline '+pct(x.baseline_avg||0)+
+    ' · challenger '+pct(x.challenger_avg||0)+
+    ' · Δ '+pct(x.avg_delta||0)+
+    ' · challenger wins '+pct(x.challenger_win_rate||0)+
+    ' · '+ci;
+}
+
+async function loadChallengerLab(sync=false){
+  const syncBtn=document.getElementById('challengerSync');
+  const refreshBtn=document.getElementById('challengerRefresh');
+  const box=document.getElementById('challengerLabOut');
+  if(syncBtn)syncBtn.disabled=true;
+  if(refreshBtn)refreshBtn.disabled=true;
+  box.className='empty';
+  box.textContent=sync?'Syncing supported recommendations into prospective experiments…':'Loading prospective challenger experiments…';
+
+  try{
+    const r=await apiFetch('/api/challenger-lab',{
+      method:sync?'POST':'GET',
+      headers:sync?{'Content-Type':'application/json'}:undefined,
+      body:sync?'{}':undefined,
+      cache:'no-store'
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Challenger Lab failed');
+    if(!d.configured){
+      box.className='warning';
+      box.textContent='Decision Memory database is not connected yet.';
+      return;
+    }
+
+    const rows=d.experiments||[];
+    if(!rows.length){
+      box.className='empty';
+      box.innerHTML=
+        '<strong>No active or completed challenger experiments yet.</strong>'+
+        '<div class="muted tiny" style="margin-top:6px">A recommendation must first reach SUPPORTED FOR FURTHER TESTING. Then the Lab starts measuring future affected decisions only.</div>';
+      return;
+    }
+
+    const verdictClass=v=>
+      v==='PROMOTION_REVIEW_CANDIDATE'?'positive':
+      v==='REJECT_RESEARCH'?'negative':
+      v==='INCONCLUSIVE'?'warning':'muted';
+
+    const counts={
+      promotion:rows.filter(x=>x.research_verdict==='PROMOTION_REVIEW_CANDIDATE').length,
+      running:rows.filter(x=>x.research_verdict==='RUNNING').length,
+      reject:rows.filter(x=>x.research_verdict==='REJECT_RESEARCH').length,
+      inconclusive:rows.filter(x=>x.research_verdict==='INCONCLUSIVE').length
+    };
+
+    box.className='';
+    box.innerHTML=
+      '<div class="grid" style="margin-top:10px">'+
+        '<div class="card"><div class="label">Experiments</div><div class="value">'+rows.length+'</div></div>'+
+        '<div class="card"><div class="label">Running</div><div class="value">'+counts.running+'</div></div>'+
+        '<div class="card"><div class="label">Promotion Review</div><div class="value positive">'+counts.promotion+'</div></div>'+
+        '<div class="card"><div class="label">Rejected</div><div class="value negative">'+counts.reject+'</div></div>'+
+      '</div>'+
+      '<div class="warning tiny" style="margin-top:10px"><strong>PRODUCTION IS UNCHANGED.</strong> Promotion means manual review only. No experiment can alter thresholds or place additional trades.</div>'+
+      rows.map(x=>
+        '<div class="card" style="margin-top:10px">'+
+          '<div class="kv"><span class="label">'+esc(x.title||x.source_recommendation_id||'Challenger')+'</span>'+
+            '<strong class="'+verdictClass(x.research_verdict)+'">'+esc(String(x.research_verdict||'RUNNING').replaceAll('_',' '))+'</strong></div>'+
+          '<div style="margin-top:8px"><strong>Challenger:</strong> '+esc(challengerConfigText(x))+'</div>'+
+          '<div class="muted tiny" style="margin-top:5px">Prospective observations '+Number(x.observations||0)+' · affected decisions '+Number(x.affected_decisions||0)+
+            ' · minimum '+Number(x.minimum_1d||0)+' graded 1D / '+Number(x.minimum_5d||0)+' graded 5D</div>'+
+          '<div class="kv" style="margin-top:9px"><span class="muted">1D paired result</span><strong>'+esc(challengerStatsText(x.one_day))+'</strong></div>'+
+          '<div class="kv"><span class="muted">5D paired result</span><strong>'+esc(challengerStatsText(x.five_day))+'</strong></div>'+
+          '<div class="muted tiny" style="margin-top:7px">Started '+new Date(x.created_at).toLocaleString()+' · auto-apply OFF</div>'+
+        '</div>'
+      ).join('')+
+      '<div class="muted tiny" style="margin-top:10px">'+esc(d.promotion_policy||'Manual review only.')+'</div>';
+  }catch(e){
+    box.className='error';
+    box.textContent=e.message||'Challenger Lab failed';
+  }finally{
+    if(syncBtn)syncBtn.disabled=false;
+    if(refreshBtn)refreshBtn.disabled=false;
+  }
 }
 
 async function loadTradeQuality(){
@@ -2188,6 +2294,8 @@ document.getElementById('performance').addEventListener('click',loadPerformance)
 document.getElementById('benchmarkLab').addEventListener('click',runBenchmarkLab);
 document.getElementById('evidenceGate').addEventListener('click',runEvidenceGate);
 document.getElementById('researchRecommendations').addEventListener('click',loadResearchRecommendations);
+document.getElementById('challengerSync').addEventListener('click',()=>loadChallengerLab(true));
+document.getElementById('challengerRefresh').addEventListener('click',()=>loadChallengerLab(false));
 document.getElementById('intradaybacktest').addEventListener('click',runIntradayBacktest);
 document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('robustnessLab').addEventListener('click',runRobustnessLab);
