@@ -2,6 +2,7 @@ import { requireDashboardAuth } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { getMultiAssetAiDecision } from '../lib/multi-asset-ai.js';
+import { saveMultiAssetDecision } from '../lib/decision-memory.js';
 
 function sanitizeCandidate(x){
   if(!x||typeof x!=='object')return null;
@@ -79,10 +80,25 @@ export default async function handler(req,res){
     if(portfolioRisk.position_lock)hardLocks.push('Position-count lock');
     if(!accountRisk.approved)hardLocks.push(...(accountRisk.locks||[]));
 
+    const memory=await saveMultiAssetDecision({
+      origin:'manual_router',
+      mode:'PAPER',
+      shadow:false,
+      execution:false,
+      decision,
+      hard_risk_clear:hardLocks.length===0,
+      hard_locks:hardLocks,
+      lanes:supplied,
+      account_risk:accountRisk,
+      portfolio_risk:portfolioRisk,
+      meta:{source:'dashboard'}
+    });
+
     return res.status(200).json({
       mode:'PAPER_RESEARCH',
       execution:false,
       decision,
+      memory,
       hard_risk_clear:hardLocks.length===0,
       hard_locks:hardLocks,
       account_risk:accountRisk,
