@@ -276,8 +276,6 @@ export default async function handler(req,res){
       shadow:true,
       execution:false,
       decision,
-      regime_ensemble:regimeEnsemble,
-      regime_experiment:regimeExperiment,
       hard_risk_clear:hardLocks.length===0,
       hard_locks:hardLocks,
       lanes,
@@ -342,6 +340,8 @@ export default async function handler(req,res){
         clock_source:clockPack.source||null
       },
       decision,
+      regime_ensemble:regimeEnsemble,
+      regime_experiment:regimeExperiment,
       hard_risk_clear:hardLocks.length===0,
       hard_locks:hardLocks,
       lanes,
