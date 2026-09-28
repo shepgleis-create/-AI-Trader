@@ -405,9 +405,18 @@ body{padding:0;overflow-x:hidden}
 
     <div class="card wide">
       <div class="label">Multi-Asset AI Router</div>
-      <p class="muted">Compares the best loaded long-stock, short-stock, crypto and option setup and chooses one lane or SKIP. It cannot override the lane-specific risk checks.</p>
+      <p class="muted">Compares the best loaded long-stock, short-stock, crypto, call and put setup and chooses one lane or SKIP. It cannot override the lane-specific risk checks.</p>
       <button id="multiAssetAI">Compare Loaded Opportunities</button>
       <div id="multiAssetAIOut" class="empty">Run one or more market scans, then compare them here.</div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Shadow Router Research</div>
+      <p class="muted">Runs the cross-asset router without placing an order. Scheduled shadow runs build evidence about which lane the AI would choose over time.</p>
+      <button id="shadowRouter">Run Shadow Router Now</button>
+      <button id="shadowMemory">Refresh Shadow Memory</button>
+      <div id="shadowRouterOut" class="empty">No shadow router run loaded yet.</div>
+      <div id="shadowMemoryOut" class="muted"></div>
     </div>
 
     <div class="card wide">
@@ -481,11 +490,25 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Multi-Asset Performance Lab</div>
+      <p class="muted">Separates actual closed paper results for long equities, shorts, crypto, calls and puts so one lane cannot hide another lane's performance.</p>
+      <button id="multiAssetStats">Refresh Multi-Asset Performance</button>
+      <div id="multiAssetStatsOut" class="empty">No multi-asset performance analysis loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Decision Memory</div>
       <p class="muted">Persistent research memory for BUY, SKIP and veto decisions. Stored candidates are revisited after 1, 3 and 5 trading days so skipped trades can be judged too.</p>
       <button id="memoryStatus">Refresh Decision Memory</button>
       <button id="gradeOutcomes">Grade Pending Outcomes Now</button>
       <div id="memoryStatusOut" class="empty">Checking persistent storage…</div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Multi-Asset Memory</div>
+      <p class="muted">Tracks router choices across long stocks, shorts, crypto, calls, puts and SKIP, including shadow runs and model fallbacks.</p>
+      <button id="multiAssetMemory">Refresh Multi-Asset Memory</button>
+      <div id="multiAssetMemoryOut" class="empty">No multi-asset memory report loaded yet.</div>
     </div>
 
     <div class="card wide">
@@ -591,6 +614,8 @@ let topCrypto=null;
 let topOptionCandidate=null;
 let topOptionUnderlying=null;
 let topOptionDirection=null;
+let topCallOptionCandidate=null;
+let topPutOptionCandidate=null;
 let marketIsOpen=false;
 let lastRegime=null;
 
@@ -755,6 +780,7 @@ function routeWorkspaceCards(){
     'Crypto Radar':'markets-crypto',
     'Options Chain Lab':'markets-options',
     'Multi-Asset AI Router':'markets-ai',
+    'Shadow Router Research':'markets-ai',
 
     'Automation Cycle':'automation',
     'Gemini Decision + Hard Risk Gate':'automation',
@@ -765,7 +791,9 @@ function routeWorkspaceCards(){
     'Research Backtest':'research',
     'Out-of-Sample Robustness Lab':'research',
     'Strategy Attribution':'research',
+    'Multi-Asset Performance Lab':'research',
     'Decision Memory':'research',
+    'Multi-Asset Memory':'research',
     'Filter Outcome Attribution':'research',
 
     'Execution Journal':'history',
@@ -786,9 +814,9 @@ function routeWorkspaceCards(){
   });
 
   setupSubWorkspace('research',[
-    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution']},
+    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab']},
     {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
-    {key:'memory',label:'Memory',labels:['Decision Memory','Filter Outcome Attribution']}
+    {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Filter Outcome Attribution']}
   ],'performance');
 
   setupSubWorkspace('system',[
@@ -1181,6 +1209,11 @@ async function runOptionsLab(direction){
     topOptionCandidate=rows.find(x=>x.quality_score>=75&&x.spread_pct!=null&&x.spread_pct<=0.12&&(Number(x.ask||0)*100)<=100)||null;
     topOptionUnderlying=source.symbol;
     topOptionDirection=direction;
+    if(topOptionCandidate){
+      const payload={...topOptionCandidate,underlying:source.symbol,direction};
+      if(direction==='BEARISH')topPutOptionCandidate=payload;
+      else topCallOptionCandidate=payload;
+    }
     updateMultiAssetButtons();
     box.className='';
     box.innerHTML=
@@ -1277,7 +1310,9 @@ async function runMultiAssetAI(){
         longCandidate:topCandidate,
         shortCandidate:topBearish,
         cryptoCandidate:topCrypto,
-        optionCandidate:optionPayload
+        optionCandidate:optionPayload,
+        callOptionCandidate:topCallOptionCandidate,
+        putOptionCandidate:topPutOptionCandidate
       })
     });
     const d=await r.json();
