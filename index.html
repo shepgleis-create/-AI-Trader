@@ -512,6 +512,14 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Shadow Outcome Scorecard</div>
+      <p class="muted">Grades every saved router lane after 1 hour, 1 day, 3 days and 5 days, then compares the selected lane with the best rejected alternative.</p>
+      <button id="gradeMultiAssetOutcomes">Grade Shadow Outcomes Now</button>
+      <button id="shadowOutcomeReport">Refresh Outcome Scorecard</button>
+      <div id="shadowOutcomeOut" class="empty">No graded shadow outcomes yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Filter Outcome Attribution</div>
       <p class="muted">Measures what happened after each decision stage and veto. This is observational research and does not auto-change the strategy.</p>
       <button id="memoryAttribution">Analyze Decision Outcomes</button>
@@ -795,6 +803,7 @@ function routeWorkspaceCards(){
     'Multi-Asset Performance Lab':'research',
     'Decision Memory':'research',
     'Multi-Asset Memory':'research',
+    'Shadow Outcome Scorecard':'research',
     'Filter Outcome Attribution':'research',
 
     'Execution Journal':'history',
@@ -817,7 +826,7 @@ function routeWorkspaceCards(){
   setupSubWorkspace('research',[
     {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab']},
     {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
-    {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Filter Outcome Attribution']}
+    {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Shadow Outcome Scorecard','Filter Outcome Attribution']}
   ],'performance');
 
   setupSubWorkspace('system',[
@@ -1949,6 +1958,61 @@ async function loadMemoryAttribution(){
   }finally{btn.disabled=false}
 }
 
+async function gradeMultiAssetOutcomes(){
+  const btn=document.getElementById('gradeMultiAssetOutcomes'),box=document.getElementById('shadowOutcomeOut');
+  btn.disabled=true;box.className='empty';box.textContent='Grading shadow decisions across every available lane…';
+  try{
+    const r=await apiFetch('/api/multi-asset-outcome-cycle',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Shadow outcome grading failed');
+    if(!d.configured){
+      box.className='warning';box.textContent='Decision Memory database is not connected yet.';return;
+    }
+    box.className='positive';
+    box.textContent='Outcome grading complete · pending '+Number(d.pending||0)+' · decisions updated '+Number(d.graded||0);
+    setTimeout(()=>loadShadowOutcomeReport(),400);
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Shadow outcome grading failed';
+  }finally{btn.disabled=false}
+}
+
+async function loadShadowOutcomeReport(){
+  const btn=document.getElementById('shadowOutcomeReport'),box=document.getElementById('shadowOutcomeOut');
+  btn.disabled=true;box.className='empty';box.textContent='Loading shadow outcome attribution…';
+  try{
+    const r=await apiFetch('/api/multi-asset-outcomes',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Shadow outcome report failed');
+    if(!d.configured){
+      box.className='warning';box.textContent='Decision Memory database is not connected yet.';return;
+    }
+
+    const s=d.summary||{},rows=d.by_lane||[];
+    box.className='';
+    box.innerHTML=
+      '<div class="grid" style="margin-top:10px">'+
+        '<div class="card"><div class="label">Graded Decisions</div><div class="value">'+Number(s.graded||0)+'</div></div>'+
+        '<div class="card"><div class="label">1D Selected-Best Rate</div><div class="value">'+((s.selected_best_rate_1d==null)?'—':pct(s.selected_best_rate_1d))+'</div></div>'+
+        '<div class="card"><div class="label">1D Opportunity Cost</div><div class="value">'+((s.avg_opportunity_cost_1d==null)?'—':pct(s.avg_opportunity_cost_1d))+'</div></div>'+
+        '<div class="card"><div class="label">5D Opportunity Cost</div><div class="value">'+((s.avg_opportunity_cost_5d==null)?'—':pct(s.avg_opportunity_cost_5d))+'</div></div>'+
+      '</div>'+
+      (rows.length?'<div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>Selected Lane</th><th>1D N</th><th>Avg 1D</th><th>1D Opp. Cost</th><th>5D N</th><th>Avg 5D</th><th>5D Opp. Cost</th></tr></thead><tbody>'+
+      rows.map(x=>'<tr>'+
+        '<td><strong>'+esc(x.lane)+'</strong></td>'+
+        '<td>'+Number(x.samples_1d||0)+'</td>'+
+        '<td class="'+((Number(x.avg_1d||0))>=0?'positive':'negative')+'">'+((x.avg_1d==null)?'—':pct(x.avg_1d))+'</td>'+
+        '<td>'+((x.opportunity_cost_1d==null)?'—':pct(x.opportunity_cost_1d))+'</td>'+
+        '<td>'+Number(x.samples_5d||0)+'</td>'+
+        '<td class="'+((Number(x.avg_5d||0))>=0?'positive':'negative')+'">'+((x.avg_5d==null)?'—':pct(x.avg_5d))+'</td>'+
+        '<td>'+((x.opportunity_cost_5d==null)?'—':pct(x.opportunity_cost_5d))+'</td>'+
+      '</tr>').join('')+
+      '</tbody></table></div>':'<div class="muted" style="margin-top:8px">No completed shadow horizons yet.</div>')+
+      '<div class="muted tiny" style="margin-top:8px">Opportunity cost = best available lane return minus the Router-selected lane return. CASH at 0% is included as an alternative.</div>';
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Shadow outcome report failed';
+  }finally{btn.disabled=false}
+}
+
 async function loadHistory(){
   const box=document.getElementById('history');
   try{
@@ -1982,6 +2046,8 @@ document.getElementById('shadowRouter').addEventListener('click',runShadowRouter
 document.getElementById('shadowMemory').addEventListener('click',loadMultiAssetMemory);
 document.getElementById('multiAssetStats').addEventListener('click',loadMultiAssetStats);
 document.getElementById('multiAssetMemory').addEventListener('click',loadMultiAssetMemory);
+document.getElementById('gradeMultiAssetOutcomes').addEventListener('click',gradeMultiAssetOutcomes);
+document.getElementById('shadowOutcomeReport').addEventListener('click',loadShadowOutcomeReport);
 document.getElementById('exposureMap').addEventListener('click',loadExposureMap);
 document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
@@ -2008,6 +2074,7 @@ hideLogin();
     await loadAccountRisk();
     await loadMemoryStatus();
     await loadMultiAssetMemory();
+    await loadShadowOutcomeReport();
   }catch{}
 })();
 </script>
