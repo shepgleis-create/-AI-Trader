@@ -595,6 +595,7 @@ async function login(){
     await loadHistory();
     await loadAccountRisk();
     await loadMemoryStatus();
+    await loadMultiAssetMemory();
   }catch(e){
     showLogin(e.message||'Login failed');
   }finally{
@@ -1335,6 +1336,123 @@ async function runMultiAssetAI(){
   }finally{btn.disabled=false}
 }
 
+async function runShadowRouter(){
+  const btn=document.getElementById('shadowRouter'),box=document.getElementById('shadowRouterOut');
+  btn.disabled=true;box.className='empty';box.textContent='Running shadow multi-asset scan and AI comparison…';
+  try{
+    const r=await apiFetch('/api/shadow-router-cycle',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Shadow router failed');
+    const x=d.decision||{};
+    box.className='';
+    box.innerHTML=
+      '<div style="font-size:22px;font-weight:850">'+esc(x.action||'SKIP')+
+        (x.symbol?' · '+esc(x.symbol):'')+
+        (x.contract?' · '+esc(x.contract):'')+
+      '</div>'+
+      '<div class="muted" style="margin-top:6px">Shadow only · no order submitted · model '+esc(x.model||'system')+
+      (x.model_fallback_used?' · fallback used':'')+'</div>'+
+      '<div class="muted" style="margin-top:8px">'+esc(x.rationale||'')+'</div>'+
+      '<div class="'+(d.hard_risk_clear?'positive':'warning')+'" style="margin-top:9px"><strong>'+
+        (d.hard_risk_clear?'HARD RISK GATES CLEAR':'HARD RISK LOCK ACTIVE')+
+      '</strong></div>'+
+      (d.hard_locks?.length?'<div class="warning tiny" style="margin-top:5px">'+d.hard_locks.map(esc).join(' · ')+'</div>':'')+
+      '<div class="muted tiny" style="margin-top:8px">Available lanes: '+esc(Object.entries(d.lanes||{}).filter(([,v])=>v).map(([k])=>k).join(' · ')||'none')+'</div>'+
+      (Object.keys(d.lane_errors||{}).length?'<div class="warning tiny" style="margin-top:6px">Partial lane errors: '+esc(Object.entries(d.lane_errors).map(([k,v])=>k+': '+v).join(' · '))+'</div>':'');
+    await loadMultiAssetMemory();
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Shadow router failed';
+  }finally{btn.disabled=false}
+}
+
+async function loadMultiAssetMemory(){
+  const btn=document.getElementById('multiAssetMemory');
+  const shadowBtn=document.getElementById('shadowMemory');
+  const box=document.getElementById('multiAssetMemoryOut');
+  const shadowBox=document.getElementById('shadowMemoryOut');
+  if(btn)btn.disabled=true;
+  if(shadowBtn)shadowBtn.disabled=true;
+  try{
+    const r=await apiFetch('/api/multi-asset-memory',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Multi-asset memory failed');
+    if(!d.configured){
+      if(box){box.className='warning';box.textContent='Decision Memory database is not connected yet.'}
+      if(shadowBox){shadowBox.className='warning';shadowBox.textContent='Shadow history will appear after Decision Memory is online.'}
+      return;
+    }
+
+    const counts=d.counts||{};
+    const lanes=d.by_lane||[];
+    const recent=d.recent||[];
+    if(box){
+      box.className='';
+      box.innerHTML=
+        '<div class="grid" style="margin-top:10px">'+
+          '<div class="card"><div class="label">Router Decisions</div><div class="value">'+Number(counts.total||0)+'</div></div>'+
+          '<div class="card"><div class="label">Shadow Runs</div><div class="value">'+Number(counts.shadow||0)+'</div></div>'+
+          '<div class="card"><div class="label">SKIPs</div><div class="value">'+Number(counts.skips||0)+'</div></div>'+
+          '<div class="card"><div class="label">Model Fallbacks</div><div class="value">'+Number(counts.model_fallbacks||0)+'</div></div>'+
+        '</div>'+
+        (lanes.length?'<div style="margin-top:12px"><div class="label">Router Lane Selection</div><div class="tablewrap"><table><thead><tr><th>Lane</th><th>Count</th><th>Avg Conviction</th></tr></thead><tbody>'+
+          lanes.map(x=>'<tr><td><strong>'+esc(x.lane)+'</strong></td><td>'+Number(x.count||0)+'</td><td>'+((x.avg_confidence==null)?'—':Number(x.avg_confidence).toFixed(1)+'/100')+'</td></tr>').join('')+
+          '</tbody></table></div></div>':'');
+    }
+    if(shadowBox){
+      const latest=recent.find(x=>x.shadow)||recent[0];
+      shadowBox.className=latest?'':'empty';
+      shadowBox.innerHTML=latest
+        ?'<div class="kv"><span class="muted">Latest saved router decision</span><strong>'+esc(latest.selected_lane||'SKIP')+
+          (latest.symbol?' · '+esc(latest.symbol):'')+'</strong></div>'+
+          '<div class="muted tiny">'+new Date(latest.created_at).toLocaleString()+' · '+esc(latest.model||'')+
+          (latest.model_fallback_used?' · fallback used':'')+'</div>'
+        :'No saved shadow/router decisions yet.';
+    }
+  }catch(e){
+    if(box){box.className='error';box.textContent=e.message||'Multi-asset memory failed'}
+    if(shadowBox){shadowBox.className='error';shadowBox.textContent=e.message||'Multi-asset memory failed'}
+  }finally{
+    if(btn)btn.disabled=false;
+    if(shadowBtn)shadowBtn.disabled=false;
+  }
+}
+
+async function loadMultiAssetStats(){
+  const btn=document.getElementById('multiAssetStats'),box=document.getElementById('multiAssetStatsOut');
+  btn.disabled=true;box.className='empty';box.textContent='Reconstructing closed paper trades by asset lane…';
+  try{
+    const r=await apiFetch('/api/multi-asset-stats',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Multi-asset performance failed');
+    const rows=(d.lane_rows||[]).filter(x=>x.lane!=='OPTION_UNKNOWN');
+    const total=d.total||{};
+    box.className='';
+    box.innerHTML=
+      '<div class="grid" style="margin-top:10px">'+
+        '<div class="card"><div class="label">Closed Trades</div><div class="value">'+Number(total.closed_trades||0)+'</div></div>'+
+        '<div class="card"><div class="label">Realized P/L</div><div class="value '+((Number(total.pnl||0))>=0?'positive':'negative')+'">'+money(total.pnl||0)+'</div></div>'+
+        '<div class="card"><div class="label">Win Rate</div><div class="value">'+pct(total.win_rate||0)+'</div></div>'+
+        '<div class="card"><div class="label">Profit Factor</div><div class="value">'+Number(total.profit_factor||0).toFixed(2)+'</div></div>'+
+      '</div>'+
+      '<div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>Lane</th><th>Trades</th><th>Win Rate</th><th>P/L</th><th>Avg Return</th><th>PF</th><th>Payoff</th><th>Expectancy</th><th>Avg Hold</th></tr></thead><tbody>'+
+      rows.map(x=>'<tr>'+
+        '<td><strong>'+esc(x.lane)+'</strong></td>'+
+        '<td>'+Number(x.closed_trades||0)+'</td>'+
+        '<td>'+pct(x.win_rate||0)+'</td>'+
+        '<td class="'+((x.pnl||0)>=0?'positive':'negative')+'">'+money(x.pnl||0)+'</td>'+
+        '<td class="'+((x.avg_return||0)>=0?'positive':'negative')+'">'+pct(x.avg_return||0)+'</td>'+
+        '<td>'+Number(x.profit_factor||0).toFixed(2)+'</td>'+
+        '<td>'+Number(x.payoff_ratio||0).toFixed(2)+'</td>'+
+        '<td>'+money(x.expectancy_per_trade||0)+'</td>'+
+        '<td>'+Number(x.avg_hold_hours||0).toFixed(1)+'h</td>'+
+      '</tr>').join('')+
+      '</tbody></table></div>'+
+      '<div class="muted tiny" style="margin-top:8px">Actual Alpaca paper fills only. Small samples are descriptive, not evidence of future profitability.</div>';
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Multi-asset performance failed';
+  }finally{btn.disabled=false}
+}
+
 async function runAutomationCycle(){
   const btn=document.getElementById('runcycle'),box=document.getElementById('cycleout');
   btn.disabled=true;box.className='empty';box.textContent='Running autonomous cycle…';
@@ -1860,6 +1978,10 @@ document.getElementById('paperOption').addEventListener('click',paperOption);
 document.getElementById('bullOptions').addEventListener('click',()=>runOptionsLab('BULLISH'));
 document.getElementById('bearOptions').addEventListener('click',()=>runOptionsLab('BEARISH'));
 document.getElementById('multiAssetAI').addEventListener('click',runMultiAssetAI);
+document.getElementById('shadowRouter').addEventListener('click',runShadowRouter);
+document.getElementById('shadowMemory').addEventListener('click',loadMultiAssetMemory);
+document.getElementById('multiAssetStats').addEventListener('click',loadMultiAssetStats);
+document.getElementById('multiAssetMemory').addEventListener('click',loadMultiAssetMemory);
 document.getElementById('exposureMap').addEventListener('click',loadExposureMap);
 document.getElementById('runcycle').addEventListener('click',runAutomationCycle);
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
@@ -1885,6 +2007,7 @@ hideLogin();
     await loadHistory();
     await loadAccountRisk();
     await loadMemoryStatus();
+    await loadMultiAssetMemory();
   }catch{}
 })();
 </script>
