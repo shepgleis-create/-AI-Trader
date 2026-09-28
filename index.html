@@ -455,6 +455,13 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Adaptive Research Recommendations</div>
+      <p class="muted">Uses chronological training and later validation data to suggest what should be tested next. Recommendations never change production thresholds automatically.</p>
+      <button id="researchRecommendations">Generate Research Recommendations</button>
+      <div id="researchRecommendationsOut" class="empty">No adaptive recommendation report loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Intraday Calibration Backtest</div>
       <p class="muted">Closer to the live paper behavior: prior-day signals, entry after 9:45 ET, one trade per day, broker-style stop/target, and forced exit by 3:45 ET.</p>
       <button id="intradaybacktest">Run Intraday Calibration Backtest</button>
@@ -803,6 +810,7 @@ function routeWorkspaceCards(){
 
     'Benchmark Lab':'research',
     'Research Evidence Gate':'research',
+    'Adaptive Research Recommendations':'research',
     'Intraday Calibration Backtest':'research',
     'Research Backtest':'research',
     'Out-of-Sample Robustness Lab':'research',
@@ -834,7 +842,8 @@ function routeWorkspaceCards(){
   setupSubWorkspace('research',[
     {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab','Trade Quality · MAE / MFE']},
     {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
-    {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Shadow Outcome Scorecard','Filter Outcome Attribution']}
+    {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Shadow Outcome Scorecard','Filter Outcome Attribution']},
+    {key:'recommendations',label:'Recommendations',labels:['Adaptive Research Recommendations']}
   ],'performance');
 
   setupSubWorkspace('system',[
@@ -1350,6 +1359,76 @@ async function runMultiAssetAI(){
       '<div class="muted tiny" style="margin-top:8px">Available lanes: '+esc((x.available_lanes||[]).join(' · '))+' · recommendation only; execution endpoints revalidate everything.</div>';
   }catch(e){
     box.className='error';box.textContent=e.message||'Multi-asset AI routing failed';
+  }finally{btn.disabled=false}
+}
+
+function researchMetricText(obj){
+  if(!obj||typeof obj!=='object')return '—';
+  const parts=[];
+  const labels={
+    samples:'N',
+    avg_chosen_return:'Chosen',
+    avg_opportunity_cost:'Opp. cost',
+    selected_best_rate:'Best rate',
+    avg_return:'Avg return',
+    positive_rate:'Positive'
+  };
+  for(const [k,label] of Object.entries(labels)){
+    if(obj[k]==null)continue;
+    const v=Number(obj[k]);
+    if(k==='samples')parts.push(label+' '+v);
+    else if(Number.isFinite(v))parts.push(label+' '+pct(v));
+  }
+  if(obj.below||obj.at_or_above){
+    const low=obj.below||{},high=obj.at_or_above||{};
+    return 'Below: '+researchMetricText(low)+' · At/above: '+researchMetricText(high);
+  }
+  return parts.join(' · ')||'—';
+}
+
+async function loadResearchRecommendations(){
+  const btn=document.getElementById('researchRecommendations'),box=document.getElementById('researchRecommendationsOut');
+  btn.disabled=true;box.className='empty';box.textContent='Running chronological train → validation research checks…';
+  try{
+    const r=await apiFetch('/api/research-recommendations',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Research recommendation analysis failed');
+    if(!d.configured){
+      box.className='warning';
+      box.textContent='Decision Memory database is not connected yet.';
+      return;
+    }
+
+    const health=d.data_health||{};
+    const rows=d.recommendations||[];
+    const statusClass=s=>
+      s==='SUPPORTED_FOR_FURTHER_TESTING'?'positive':
+      s==='CONTRADICTED'?'negative':
+      s==='WAIT_FOR_DATA'?'warning':'muted';
+
+    box.className='';
+    box.innerHTML=
+      '<div class="grid" style="margin-top:10px">'+
+        '<div class="card"><div class="label">Research Readiness</div><div class="value">'+esc(health.readiness||'EARLY')+'</div></div>'+
+        '<div class="card"><div class="label">Router 1D Outcomes</div><div class="value">'+Number(health.router_1d||0)+'</div></div>'+
+        '<div class="card"><div class="label">Router 5D Outcomes</div><div class="value">'+Number(health.router_5d||0)+'</div></div>'+
+        '<div class="card"><div class="label">Scanner 1D Outcomes</div><div class="value">'+Number(health.scanner_1d||0)+'</div></div>'+
+      '</div>'+
+      '<div class="warning tiny" style="margin-top:10px"><strong>AUTO-APPLY IS OFF.</strong> These are research hypotheses only. Production risk limits and thresholds stay unchanged.</div>'+
+      rows.map(x=>
+        '<div class="card" style="margin-top:10px">'+
+          '<div class="kv"><span class="label">'+esc(x.category||'RESEARCH')+'</span><strong class="'+statusClass(x.status)+'">'+esc((x.status||'').replaceAll('_',' '))+'</strong></div>'+
+          '<div style="font-size:17px;font-weight:850;margin-top:7px">'+esc(x.title||'Recommendation')+'</div>'+
+          '<div class="muted" style="margin-top:7px">'+esc(x.rationale||'')+'</div>'+
+          '<div style="margin-top:10px"><strong>Proposed research test:</strong> '+esc(x.proposed_change||'')+'</div>'+
+          '<div class="kv" style="margin-top:8px"><span class="muted">Training evidence</span><strong>'+esc(researchMetricText(x.train))+'</strong></div>'+
+          '<div class="kv"><span class="muted">Later validation</span><strong>'+esc(researchMetricText(x.validation))+'</strong></div>'+
+          (x.current_sample!=null?'<div class="muted tiny" style="margin-top:6px">Sample '+Number(x.current_sample)+' · minimum '+Number(x.minimum_sample||0)+'</div>':'')+
+        '</div>'
+      ).join('')+
+      '<div class="muted tiny" style="margin-top:10px">'+esc(d.methodology?.split||'')+' · '+esc(d.methodology?.principle||'')+'</div>';
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Research recommendation analysis failed';
   }finally{btn.disabled=false}
 }
 
@@ -2108,6 +2187,7 @@ document.getElementById('memoryAttribution').addEventListener('click',loadMemory
 document.getElementById('performance').addEventListener('click',loadPerformance);
 document.getElementById('benchmarkLab').addEventListener('click',runBenchmarkLab);
 document.getElementById('evidenceGate').addEventListener('click',runEvidenceGate);
+document.getElementById('researchRecommendations').addEventListener('click',loadResearchRecommendations);
 document.getElementById('intradaybacktest').addEventListener('click',runIntradayBacktest);
 document.getElementById('backtest').addEventListener('click',runBacktest);
 document.getElementById('robustnessLab').addEventListener('click',runRobustnessLab);
