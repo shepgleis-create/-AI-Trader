@@ -1325,6 +1325,44 @@ async function paperBuy(){
   finally{updatePaperButton()}
 }
 
+function regimeEnsembleHtml(e,baseline){
+  if(!e||!e.decision)return '';
+  const d=e.decision||{};
+  const state=e.regime?.state||'UNKNOWN';
+  const scores=(e.lane_scores||[])
+    .filter(x=>!x.blocked)
+    .sort((a,b)=>Number(b.score||0)-Number(a.score||0))
+    .slice(0,5);
+
+  return '<div class="card" style="margin-top:12px">'+
+    '<div class="kv"><span class="label">REGIME ENSEMBLE</span><strong class="'+(e.disagrees_with_ai?'warning':'positive')+'">'+
+      (e.disagrees_with_ai?'DISAGREES WITH GEMINI':'AGREES WITH GEMINI')+
+    '</strong></div>'+
+    '<div style="font-size:20px;font-weight:850;margin-top:7px">'+esc(d.action||'SKIP')+
+      (d.symbol?' · '+esc(d.symbol):'')+
+      (d.contract?' · '+esc(d.contract):'')+
+    '</div>'+
+    '<div class="muted" style="margin-top:6px">'+esc(d.rationale||'')+'</div>'+
+    '<div class="kv" style="margin-top:9px"><span class="muted">Market state</span><strong>'+esc(state)+'</strong></div>'+
+    '<div class="kv"><span class="muted">Historical prior source</span><strong>'+esc(e.prior_source||'—')+' · N '+Number(e.matching_historical_decisions||0)+'</strong></div>'+
+    '<div class="kv"><span class="muted">Top-score margin</span><strong>'+Number(e.top_margin||0).toFixed(1)+' pts</strong></div>'+
+    (scores.length?'<div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Lane</th><th>Composite</th><th>Base</th><th>Regime</th><th>History</th><th>Execution</th><th>AI</th></tr></thead><tbody>'+
+      scores.map(x=>'<tr>'+
+        '<td><strong>'+esc(x.lane)+'</strong></td>'+
+        '<td>'+Number(x.score||0).toFixed(1)+'</td>'+
+        '<td>'+Number(x.base_score||0).toFixed(1)+'</td>'+
+        '<td>'+Number(x.regime_adjustment||0).toFixed(1)+'</td>'+
+        '<td>'+Number(x.historical_adjustment||0).toFixed(1)+'</td>'+
+        '<td>'+Number(x.execution_adjustment||0).toFixed(1)+'</td>'+
+        '<td>'+Number(x.ai_adjustment||0).toFixed(1)+'</td>'+
+      '</tr>').join('')+
+      '</tbody></table></div>':'')+
+    '<div class="muted tiny" style="margin-top:8px">Gemini baseline: '+esc(baseline?.action||'SKIP')+
+      (baseline?.symbol?' · '+esc(baseline.symbol):'')+
+      ' · Ensemble remains research-only until prospective results justify manual promotion.</div>'+
+  '</div>';
+}
+
 async function runMultiAssetAI(){
   const btn=document.getElementById('multiAssetAI'),box=document.getElementById('multiAssetAIOut');
   const optionPayload=topOptionCandidate&&topOptionUnderlying&&topOptionDirection
@@ -1348,7 +1386,8 @@ async function runMultiAssetAI(){
         cryptoCandidate:topCrypto,
         optionCandidate:optionPayload,
         callOptionCandidate:topCallOptionCandidate,
-        putOptionCandidate:topPutOptionCandidate
+        putOptionCandidate:topPutOptionCandidate,
+        regimeContext:lastRegime
       })
     });
     const d=await r.json();
@@ -1365,7 +1404,8 @@ async function runMultiAssetAI(){
       '<div class="muted" style="margin-top:8px">'+esc(x.rationale||'')+'</div>'+
       '<div class="'+(locked?'negative':'positive')+'" style="margin-top:10px"><strong>'+(locked?'ACCOUNT/PORTFOLIO LOCK ACTIVE':'ACCOUNT/PORTFOLIO HARD GATES CLEAR')+'</strong></div>'+
       (d.hard_locks?.length?'<div class="warning tiny" style="margin-top:6px">'+d.hard_locks.map(esc).join(' · ')+'</div>':'')+
-      '<div class="muted tiny" style="margin-top:8px">Available lanes: '+esc((x.available_lanes||[]).join(' · '))+' · recommendation only; execution endpoints revalidate everything.</div>';
+      '<div class="muted tiny" style="margin-top:8px">Available lanes: '+esc((x.available_lanes||[]).join(' · '))+' · recommendation only; execution endpoints revalidate everything.</div>'+
+      regimeEnsembleHtml(d.regime_ensemble,x);
   }catch(e){
     box.className='error';box.textContent=e.message||'Multi-asset AI routing failed';
   }finally{btn.disabled=false}
@@ -1599,7 +1639,8 @@ async function runShadowRouter(){
       '</strong></div>'+
       (d.hard_locks?.length?'<div class="warning tiny" style="margin-top:5px">'+d.hard_locks.map(esc).join(' · ')+'</div>':'')+
       '<div class="muted tiny" style="margin-top:8px">Available lanes: '+esc(Object.entries(d.lanes||{}).filter(([,v])=>v).map(([k])=>k).join(' · ')||'none')+'</div>'+
-      (Object.keys(d.lane_errors||{}).length?'<div class="warning tiny" style="margin-top:6px">Partial lane errors: '+esc(Object.entries(d.lane_errors).map(([k,v])=>k+': '+v).join(' · '))+'</div>':'');
+      (Object.keys(d.lane_errors||{}).length?'<div class="warning tiny" style="margin-top:6px">Partial lane errors: '+esc(Object.entries(d.lane_errors).map(([k,v])=>k+': '+v).join(' · '))+'</div>':'')+
+      regimeEnsembleHtml(d.regime_ensemble,x);
     await loadMultiAssetMemory();
   }catch(e){
     box.className='error';box.textContent=e.message||'Shadow router failed';
