@@ -519,6 +519,13 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Regime Learning Matrix</div>
+      <p class="muted">Shows how every lane actually performed in the market states recorded by Decision Memory. The Regime Ensemble uses this evidence as a prior, with small samples heavily discounted.</p>
+      <button id="regimeLearning">Refresh Regime Learning</button>
+      <div id="regimeLearningOut" class="empty">No regime learning report loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Decision Memory</div>
       <p class="muted">Persistent research memory for BUY, SKIP and veto decisions. Stored candidates are revisited after 1, 3 and 5 trading days so skipped trades can be judged too.</p>
       <button id="memoryStatus">Refresh Decision Memory</button>
@@ -826,6 +833,7 @@ function routeWorkspaceCards(){
     'Strategy Attribution':'research',
     'Multi-Asset Performance Lab':'research',
     'Trade Quality · MAE / MFE':'research',
+    'Regime Learning Matrix':'research',
     'Decision Memory':'research',
     'Multi-Asset Memory':'research',
     'Shadow Outcome Scorecard':'research',
@@ -849,7 +857,7 @@ function routeWorkspaceCards(){
   });
 
   setupSubWorkspace('research',[
-    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab','Trade Quality · MAE / MFE']},
+    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab','Trade Quality · MAE / MFE','Regime Learning Matrix']},
     {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
     {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Shadow Outcome Scorecard','Filter Outcome Attribution']},
     {key:'recommendations',label:'Recommendations',labels:['Adaptive Research Recommendations','Shadow A/B Challenger Lab']}
@@ -1486,6 +1494,7 @@ function challengerConfigText(exp){
   if(exp?.parameter_type==='ROUTER_CONFIDENCE_FLOOR')return 'Router confidence ≥ '+Number(c.threshold||0);
   if(exp?.parameter_type==='LONG_SCANNER_FLOOR')return 'Long scanner score ≥ '+Number(c.threshold||0);
   if(exp?.parameter_type==='BLOCK_SELECTED_LANE')return 'De-emphasize '+String(c.lane||'lane')+' → SKIP';
+  if(exp?.parameter_type==='REGIME_ENSEMBLE_V1')return 'Regime Ensemble v1';
   return JSON.stringify(c);
 }
 
@@ -1576,6 +1585,58 @@ async function loadChallengerLab(sync=false){
     if(syncBtn)syncBtn.disabled=false;
     if(refreshBtn)refreshBtn.disabled=false;
   }
+}
+
+async function loadRegimeLearning(){
+  const btn=document.getElementById('regimeLearning'),box=document.getElementById('regimeLearningOut');
+  btn.disabled=true;box.className='empty';box.textContent='Loading graded lane outcomes by market regime…';
+  try{
+    const r=await apiFetch('/api/regime-learning',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Regime learning report failed');
+    if(!d.configured){
+      box.className='warning';box.textContent='Decision Memory database is not connected yet.';return;
+    }
+    const states=d.states||[];
+    if(!states.length){
+      box.className='empty';
+      box.textContent='No graded decisions with regime context yet.';
+      return;
+    }
+    const laneOrder=d.lane_order||[];
+    box.className='';
+    box.innerHTML=
+      '<div class="muted tiny">Regime-tagged decisions '+Number(d.total_regime_decisions||0)+' · small samples are discounted by the ensemble.</div>'+
+      states.map(s=>
+        '<div class="card" style="margin-top:10px">'+
+          '<div class="kv"><span class="label">'+esc(s.regime?.state||'UNKNOWN')+'</span><strong>N '+Number(s.decisions||0)+'</strong></div>'+
+          '<div class="muted tiny" style="margin-top:4px">'+
+            esc((s.regime?.coarse||'UNKNOWN')+' · '+(s.regime?.breadth_bucket||'')+' · '+(s.regime?.volatility_bucket||''))+
+          '</div>'+
+          '<div class="tablewrap" style="margin-top:9px"><table><thead><tr><th>Lane</th><th>1D N</th><th>Avg 1D</th><th>1D Positive</th><th>5D N</th><th>Avg 5D</th><th>5D Positive</th></tr></thead><tbody>'+
+          laneOrder.map(lane=>{
+            const x=s.lanes?.[lane]||{};
+            const a1=x.avg_1d==null?'—':pct(x.avg_1d);
+            const p1=x.positive_rate_1d==null?'—':pct(x.positive_rate_1d);
+            const a5=x.avg_5d==null?'—':pct(x.avg_5d);
+            const p5=x.positive_rate_5d==null?'—':pct(x.positive_rate_5d);
+            return '<tr>'+
+              '<td><strong>'+esc(lane)+'</strong></td>'+
+              '<td>'+Number(x.samples_1d||0)+'</td>'+
+              '<td class="'+((Number(x.avg_1d||0))>=0?'positive':'negative')+'">'+a1+'</td>'+
+              '<td>'+p1+'</td>'+
+              '<td>'+Number(x.samples_5d||0)+'</td>'+
+              '<td class="'+((Number(x.avg_5d||0))>=0?'positive':'negative')+'">'+a5+'</td>'+
+              '<td>'+p5+'</td>'+
+            '</tr>';
+          }).join('')+
+          '</tbody></table></div>'+
+        '</div>'
+      ).join('')+
+      '<div class="muted tiny" style="margin-top:9px">'+esc(d.note||'')+'</div>';
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Regime learning report failed';
+  }finally{btn.disabled=false}
 }
 
 async function loadTradeQuality(){
@@ -2319,6 +2380,7 @@ document.getElementById('shadowRouter').addEventListener('click',runShadowRouter
 document.getElementById('shadowMemory').addEventListener('click',loadMultiAssetMemory);
 document.getElementById('multiAssetStats').addEventListener('click',loadMultiAssetStats);
 document.getElementById('tradeQuality').addEventListener('click',loadTradeQuality);
+document.getElementById('regimeLearning').addEventListener('click',loadRegimeLearning);
 document.getElementById('multiAssetMemory').addEventListener('click',loadMultiAssetMemory);
 document.getElementById('gradeMultiAssetOutcomes').addEventListener('click',gradeMultiAssetOutcomes);
 document.getElementById('shadowOutcomeReport').addEventListener('click',loadShadowOutcomeReport);
