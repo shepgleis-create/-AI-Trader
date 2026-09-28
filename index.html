@@ -497,6 +497,13 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Trade Quality · MAE / MFE</div>
+      <p class="muted">Measures how far actual closed paper trades moved against us and in our favor while open, using 15-minute historical bars.</p>
+      <button id="tradeQuality">Analyze Trade Quality</button>
+      <div id="tradeQualityOut" class="empty">No MAE/MFE analysis loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Decision Memory</div>
       <p class="muted">Persistent research memory for BUY, SKIP and veto decisions. Stored candidates are revisited after 1, 3 and 5 trading days so skipped trades can be judged too.</p>
       <button id="memoryStatus">Refresh Decision Memory</button>
@@ -801,6 +808,7 @@ function routeWorkspaceCards(){
     'Out-of-Sample Robustness Lab':'research',
     'Strategy Attribution':'research',
     'Multi-Asset Performance Lab':'research',
+    'Trade Quality · MAE / MFE':'research',
     'Decision Memory':'research',
     'Multi-Asset Memory':'research',
     'Shadow Outcome Scorecard':'research',
@@ -824,7 +832,7 @@ function routeWorkspaceCards(){
   });
 
   setupSubWorkspace('research',[
-    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab']},
+    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab','Trade Quality · MAE / MFE']},
     {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
     {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Shadow Outcome Scorecard','Filter Outcome Attribution']}
   ],'performance');
@@ -1342,6 +1350,45 @@ async function runMultiAssetAI(){
       '<div class="muted tiny" style="margin-top:8px">Available lanes: '+esc((x.available_lanes||[]).join(' · '))+' · recommendation only; execution endpoints revalidate everything.</div>';
   }catch(e){
     box.className='error';box.textContent=e.message||'Multi-asset AI routing failed';
+  }finally{btn.disabled=false}
+}
+
+async function loadTradeQuality(){
+  const btn=document.getElementById('tradeQuality'),box=document.getElementById('tradeQualityOut');
+  btn.disabled=true;box.className='empty';box.textContent='Loading intraday excursion data for closed bot trades…';
+  try{
+    const r=await apiFetch('/api/trade-quality',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Trade quality analysis failed');
+
+    const total=d.total||{};
+    const rows=Object.entries(d.by_lane||{});
+    if(!Number(total.trades||0)){
+      box.className='empty';box.textContent=d.message||'No closed bot trades yet.';return;
+    }
+
+    box.className='';
+    box.innerHTML=
+      '<div class="grid" style="margin-top:10px">'+
+        '<div class="card"><div class="label">Trades Covered</div><div class="value">'+Number(total.trades||0)+'</div></div>'+
+        '<div class="card"><div class="label">Avg MFE</div><div class="value positive">'+((total.avg_mfe==null)?'—':pct(total.avg_mfe))+'</div></div>'+
+        '<div class="card"><div class="label">Avg MAE</div><div class="value negative">'+((total.avg_mae==null)?'—':pct(total.avg_mae))+'</div></div>'+
+        '<div class="card"><div class="label">MFE Captured</div><div class="value">'+((total.avg_mfe_capture==null)?'—':pct(total.avg_mfe_capture))+'</div></div>'+
+      '</div>'+
+      '<div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>Lane</th><th>Trades</th><th>Avg MFE</th><th>Avg MAE</th><th>Realized</th><th>MFE Captured</th><th>Drawdown / Return</th></tr></thead><tbody>'+
+      rows.map(([lane,x])=>'<tr>'+
+        '<td><strong>'+esc(lane)+'</strong></td>'+
+        '<td>'+Number(x.trades||0)+'</td>'+
+        '<td class="positive">'+((x.avg_mfe==null)?'—':pct(x.avg_mfe))+'</td>'+
+        '<td class="negative">'+((x.avg_mae==null)?'—':pct(x.avg_mae))+'</td>'+
+        '<td>'+((x.avg_realized_return==null)?'—':pct(x.avg_realized_return))+'</td>'+
+        '<td>'+((x.avg_mfe_capture==null)?'—':pct(x.avg_mfe_capture))+'</td>'+
+        '<td>'+((x.avg_drawdown_to_return==null)?'—':Number(x.avg_drawdown_to_return).toFixed(2)+'×')+'</td>'+
+      '</tr>').join('')+
+      '</tbody></table></div>'+
+      '<div class="muted tiny" style="margin-top:8px">Coverage '+Number(d.coverage?.trades_with_intraday_bars||0)+' / '+Number(d.coverage?.closed_trades_considered||0)+' closed trades with usable intraday bars.</div>';
+  }catch(e){
+    box.className='error';box.textContent=e.message||'Trade quality analysis failed';
   }finally{btn.disabled=false}
 }
 
@@ -2045,6 +2092,7 @@ document.getElementById('multiAssetAI').addEventListener('click',runMultiAssetAI
 document.getElementById('shadowRouter').addEventListener('click',runShadowRouter);
 document.getElementById('shadowMemory').addEventListener('click',loadMultiAssetMemory);
 document.getElementById('multiAssetStats').addEventListener('click',loadMultiAssetStats);
+document.getElementById('tradeQuality').addEventListener('click',loadTradeQuality);
 document.getElementById('multiAssetMemory').addEventListener('click',loadMultiAssetMemory);
 document.getElementById('gradeMultiAssetOutcomes').addEventListener('click',gradeMultiAssetOutcomes);
 document.getElementById('shadowOutcomeReport').addEventListener('click',loadShadowOutcomeReport);
