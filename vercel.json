@@ -25,6 +25,10 @@
     {
       "path": "/api/shadow-router-cycle",
       "schedule": "5 15,17,19 * * 1-5"
+    },
+    {
+      "path": "/api/multi-asset-outcome-cycle",
+      "schedule": "35 14-22 * * 1-5"
     }
   ]
 }
