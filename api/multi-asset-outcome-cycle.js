@@ -2,7 +2,8 @@ import { isDashboardAuthorized } from '../lib/auth.js';
 import {
   decisionMemoryConfigured,
   getPendingMultiAssetOutcomes,
-  updateMultiAssetOutcome
+  updateMultiAssetOutcome,
+  updateResearchChallengerOutcomes
 } from '../lib/decision-memory.js';
 import { loadOutcomeBars, gradeMultiAssetDecision } from '../lib/multi-asset-outcomes.js';
 
@@ -42,6 +43,7 @@ export default async function handler(req,res){
       if(before===after) continue;
 
       await updateMultiAssetOutcome(row.decision_id,outcome);
+      await updateResearchChallengerOutcomes(row.decision_id,outcome);
       graded++;
       details.push({
         decision_id:row.decision_id,
