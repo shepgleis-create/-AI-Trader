@@ -655,6 +655,7 @@ let topOptionDirection=null;
 let topCallOptionCandidate=null;
 let topPutOptionCandidate=null;
 let marketIsOpen=false;
+let automationIsEnabled=false;
 let lastRegime=null;
 
 const workspacePages={
@@ -928,6 +929,7 @@ async function load(){
     const dayEl=document.getElementById('daypl'); dayEl.textContent=pct(day); dayEl.className='value '+(day>=0?'positive':'negative');
     document.getElementById('exposure').textContent=pct(d.risk?.exposure_pct||0);
     marketIsOpen=Boolean(d.market.is_open);
+    automationIsEnabled=Boolean(d.automation_enabled);
     const marketEl=document.getElementById('market'); marketEl.textContent=marketIsOpen?'OPEN':'CLOSED'; marketEl.className='value '+(marketIsOpen?'positive':'');
     document.getElementById('next').textContent=marketIsOpen?'Next close: '+new Date(d.market.next_close).toLocaleString():'Next open: '+new Date(d.market.next_open).toLocaleString();
     document.getElementById('automation').textContent=d.automation_enabled?'ON':'OFF';
@@ -1158,7 +1160,11 @@ async function runCryptoScan(){
 
     box.className='';
     box.innerHTML=
-      '<div class="warning tiny">Research-only · no autonomous crypto orders yet. Universe '+Number(d.universe_size||0)+' · deep analyzed '+Number(d.deeply_analyzed||0)+' · high pump-risk '+Number(d.high_pump_risk||0)+'</div>'+
+      '<div class="'+(automationIsEnabled?'positive':'warning')+' tiny">'+
+        (automationIsEnabled
+          ?'Autonomous PAPER crypto entries ON · one crypto position max · one entry attempt per 24h. '
+          :'Autonomous PAPER crypto entries OFF · scanner + manual paper tests only. ')+
+        'Universe '+Number(d.universe_size||0)+' · deep analyzed '+Number(d.deeply_analyzed||0)+' · high pump-risk '+Number(d.high_pump_risk||0)+'</div>'+
       '<div class="tablewrap"><table><thead><tr><th>Pair</th><th>Score</th><th>Signal</th><th>Pump Risk</th><th>Day</th><th>7D</th><th>30D</th><th>RSI</th><th>Vol</th><th>Spread</th></tr></thead><tbody>'+
       rows.map(x=>'<tr>'+
         '<td><strong>'+esc(x.symbol)+'</strong></td>'+
@@ -2235,7 +2241,29 @@ async function loadMemoryStatus(){
   }catch(e){
     setWorkspaceChip('dB','ERROR','negative');
     box.className='error';
-    box.textContent=e.message||'Decision Memory status failed';
+    let detail=e.message||'Decision Memory status failed';
+    try{
+      const dr=await apiFetch('/api/memory-diagnostics',{cache:'no-store'});
+      const dd=await dr.json();
+      if(dr.ok){
+        const issue=dd.status||'DATABASE_ERROR';
+        const ping=dd.ping||{};
+        const schema=dd.schema||{};
+        detail=issue+
+          (ping.code?' · '+ping.code:'')+
+          (ping.message?' · '+ping.message:'')+
+          (schema.message?' · '+schema.message:'');
+        box.innerHTML=
+          '<strong>MEMORY '+esc(issue)+'</strong>'+
+          '<div class="muted tiny" style="margin-top:6px">'+esc(detail)+'</div>'+
+          '<div class="muted tiny" style="margin-top:6px">DATABASE_URL present: '+(dd.connection?.env_present?'YES':'NO')+
+          ' · pooled: '+(dd.connection?.pooled===true?'YES':dd.connection?.pooled===false?'NO':'—')+
+          ' · sslmode: '+esc(dd.connection?.sslmode||'—')+
+          ' · channel binding: '+esc(dd.connection?.channel_binding||'—')+'</div>';
+        return;
+      }
+    }catch{}
+    box.textContent=detail;
   }finally{if(btn)btn.disabled=false}
 }
 
