@@ -29,6 +29,10 @@
     {
       "path": "/api/multi-asset-outcome-cycle",
       "schedule": "35 14-22 * * 1-5"
+    },
+    {
+      "path": "/api/research-cycle",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
