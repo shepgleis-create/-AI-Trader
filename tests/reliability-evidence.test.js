@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { simulateDailyStrategy,runChallengerComparison } from '../lib/challenger-strategies.js';
 import { selectDatabaseUrl } from '../lib/database-url.js';
+import { evaluateJobHealth } from '../api/ops-health.js';
 import { cronSlot, scheduledJobs, cronDatabaseConfig } from '../lib/cron-telemetry.js';
 import { wilsonLowerBound,evaluateLane,buildEvidenceScoreboard } from '../lib/evidence-scoreboard.js';
 
@@ -115,4 +116,24 @@ test('proper original production URL is preferred to fallback',()=>{
   };
   assert.equal(selectDatabaseUrl(env).key,'DATABASE_URL');
   assert.equal(selectDatabaseUrl({DATABASE_URL:'postgresql://bad@base/neondb'}).valid,false);
+});
+
+test('Cron Reliability evaluates every configured worker including continuous research',()=>{
+  const now=new Date('2026-10-08T22:22:30.000Z');
+  const rows=[
+    {job:'auto-cycle',status:'COMPLETED',started_at:'2026-10-08T22:22:10Z',action:'none',response_code:200},
+    {job:'crypto-risk-cycle',status:'COMPLETED',started_at:'2026-10-08T22:15:12Z',action:'crypto_no_setup',response_code:200},
+    {job:'outcome-cycle',status:'COMPLETED',started_at:'2026-10-08T22:15:01Z',action:'completed',response_code:200}
+  ];
+  const results=scheduledJobs().map(job=>evaluateJobHealth(job,rows,now));
+  assert.equal(results.length,scheduledJobs().length);
+  assert.equal(results.find(x=>x.job==='research-cycle').expected_cadence_minutes,30);
+  assert.equal(results.find(x=>x.job==='research-cycle').state,'NO_RUN_RECORDED');
+  assert.equal(results.find(x=>x.job==='crypto-risk-cycle').state,'RECENT');
+  assert.equal(results.find(x=>x.job==='auto-cycle').last_http_status,200);
+});
+test('new unregistered cron workers cannot crash the health endpoint',()=>{
+  const info=evaluateJobHealth('future-cron-worker',[],new Date('2026-10-08T22:22:30Z'));
+  assert.equal(info.job,'future-cron-worker');
+  assert.equal(info.expected_cadence_minutes,15);
 });
