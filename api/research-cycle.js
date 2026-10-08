@@ -5,6 +5,7 @@ import { fetchCryptoScan } from '../lib/multi-asset.js';
 import { fetchNewsContext } from '../lib/context.js';
 import { newDecisionCycleId,saveDecisionMemory } from '../lib/decision-memory.js';
 import { assessResearchCandidate } from '../lib/research-lenses.js';
+import { saveForwardResearch } from '../lib/forward-research.js';
 
 function preview(candidate){
   if(!candidate)return null;
@@ -40,6 +41,14 @@ async function handler(req,res){
   }
   const headlineCount=Object.values(articles).reduce((n,arr)=>n+(arr?.length||0),0);
   const researchLenses=topStocks.map(c=>assessResearchCandidate(c,articles[c.symbol]||[]));
+  let forwardMemory={saved:0};
+  if(topStocks.length&&cronDatabaseConfig().valid){
+    try{forwardMemory=await saveForwardResearch(topStocks.map(c=>({
+      observation_id:generated_at,symbol:c.symbol,strategy:'SCANNER_OBSERVATION',
+      reference_price:c.price,score:c.score,
+      research:researchLenses.find(x=>x.symbol===c.symbol)||{}
+    })))}catch(e){forwardMemory={saved:0,error:'Forward observation write failed'}}
+  }
   const errors={
     ...(stocks.status==='rejected'?{stocks:String(stocks.reason?.message||'Stock scan failed').slice(0,180)}:{}),
     ...(crypto.status==='rejected'?{crypto:String(crypto.reason?.message||'Crypto scan failed').slice(0,180)}:{}),
@@ -87,6 +96,7 @@ async function handler(req,res){
     crypto:{ok:crypto.status==='fulfilled',deeply_analyzed:crypto.value?.deeply_analyzed??null,
       candidates:topCrypto.map(preview)},
     headlines_seen:headlineCount,headlines:articles,research_lenses:researchLenses,
+    forward_observations:forwardMemory,
     memory_saved:Boolean(memory?.saved),storage_issue:memory?.reason||db.error||null,
     errors
   });
