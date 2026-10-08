@@ -14,8 +14,8 @@ export default async function handler(req,res){
     return res.status(200).json({
       generated_at:new Date().toISOString(),
       mode:'PAPER_RESEARCH',
-      execution_enabled:false,
-      note:'Crypto execution remains disabled until the 24/7 exit monitor is live.',
+      execution_enabled:String(process.env.AUTO_TRADING_ENABLED||'').toLowerCase()==='true',
+      note:'This endpoint is research-only; automatic paper crypto orders are managed separately by the scheduled crypto risk cycle. An enabled setting does not prove that workers have run.',
       ...scan
     });
   }catch(error){
