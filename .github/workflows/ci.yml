@@ -1,0 +1,36 @@
+name: AI Trader safety checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Check backend JavaScript syntax
+        run: find api lib -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Check dashboard JavaScript syntax
+        run: |
+          node --input-type=module -e '
+          import fs from "node:fs";
+          import vm from "node:vm";
+          const html=fs.readFileSync("index.html","utf8");
+          const scripts=[...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/g)];
+          if(!scripts.length)throw new Error("No inline dashboard scripts found");
+          for(const m of scripts)new vm.Script(m[1],{filename:"index.html"});
+          console.log("Validated",scripts.length,"inline script(s)");
+          '
+      - name: Unit tests
+        run: node --test tests/*.test.js
