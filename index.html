@@ -420,6 +420,13 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Continuous Market Research</div>
+      <p class="muted">A separate scheduled worker scans U.S. equities, crypto, and relevant headlines every 30 minutes, including outside U.S. stock hours. Research does not place orders.</p>
+      <button id="researchCycle">Run Fresh Stock + Crypto + News Scan</button>
+      <div id="researchCycleOut" class="empty">Research results not loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Cron Reliability</div>
       <p class="muted">Actual scheduled-worker run records from Neon, with duplicate suppression, failures and the last recorded action. A missing record means unverified, not healthy.</p>
       <button id="opsHealth">Refresh Job Health</button>
@@ -428,7 +435,7 @@ body{padding:0;overflow-x:hidden}
 
     <div class="card wide">
       <div class="label">Automation Cycle</div>
-      <p class="muted">Runs the exact same autonomous cycle used by Vercel Cron. While AUTO_TRADING_ENABLED=false it remains a dry run and will not submit a new automated order.</p>
+      <p class="muted">Runs the same stock paper-trading cycle as Vercel Cron. Automatic entry depends on your enabled production setting, functioning scheduling, a healthy risk state and a valid Neon job lease. Market scans and order execution are separate from research-only monitoring.</p>
       <button id="runcycle">Run Automation Cycle Now</button>
       <div id="cycleout" class="empty">No manual cycle run yet.</div>
     </div>
@@ -843,6 +850,7 @@ function routeWorkspaceCards(){
     'Multi-Asset AI Router':'markets-ai',
     'Shadow Router Research':'markets-ai',
 
+    'Continuous Market Research':'automation',
     'Cron Reliability':'automation',
     'Automation Cycle':'automation',
     'Gemini Decision + Hard Risk Gate':'automation',
@@ -2445,6 +2453,32 @@ async function compareChallengerStrategies(asset){
   }catch(e){box.className='error';box.textContent=e.message||'Challenger comparison failed'}
   finally{buttons.forEach(b=>b.disabled=false)}
 }
+async function runContinuousResearch(){
+  const btn=document.getElementById('researchCycle'),box=document.getElementById('researchCycleOut');
+  if(btn)btn.disabled=true;
+  box.className='empty';
+  box.textContent='Scanning stocks, crypto and recent market headlines…';
+  try{
+    const r=await apiFetch('/api/research-cycle',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok&&!d.ok)throw new Error(d.error||(Object.values(d.errors||{})[0])||'Market research scan failed');
+    const stocks=d.stocks?.candidates||[],crypto=d.crypto?.candidates||[];
+    const symbolTable=(name,rows)=>'<div style="margin-top:10px"><div class="label">'+name+'</div>'+
+      (rows.length?'<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Score</th><th>Price</th></tr></thead><tbody>'+
+        rows.map(x=>'<tr><td><strong>'+esc(x.symbol)+'</strong></td><td>'+Number(x.score||0)+'</td><td>'+money(x.price||0)+'</td></tr>').join('')+'</tbody></table></div>':
+        '<div class="warning">No candidates returned from this market feed.</div>')+'</div>';
+    box.className='';
+    box.innerHTML='<div class="kv"><span class="muted">Stock research</span><strong class="'+(d.stocks?.ok?'positive':'negative')+'">'+(d.stocks?.ok?'COMPLETED':'FAILED')+'</strong></div>'+
+      '<div class="kv"><span class="muted">Crypto research</span><strong class="'+(d.crypto?.ok?'positive':'negative')+'">'+(d.crypto?.ok?'COMPLETED':'FAILED')+'</strong></div>'+
+      '<div class="kv"><span class="muted">Headlines reviewed</span><strong>'+Number(d.headlines_seen||0)+'</strong></div>'+
+      '<div class="kv"><span class="muted">Saved to research memory</span><strong class="'+(d.memory_saved?'positive':'warning')+'">'+(d.memory_saved?'YES':'NO')+'</strong></div>'+
+      (d.storage_issue?'<div class="warning">'+esc(d.storage_issue)+'</div>':'')+
+      symbolTable('Stock shortlist',stocks)+symbolTable('Crypto shortlist',crypto)+
+      (Object.keys(d.errors||{}).length?'<div class="warning">'+esc(Object.entries(d.errors).map(([k,v])=>k+': '+v).join(' · '))+'</div>':'')+
+      '<div class="muted tiny">Research only · no paper orders are placed by this scan. Strong scores do not mean a guaranteed profitable opportunity.</div>';
+  }catch(e){box.className='error';box.textContent='Research scan error: '+(e?.message||'Request failed')}
+  finally{if(btn)btn.disabled=false}
+}
 async function loadOpsHealth(){
   const btn=document.getElementById('opsHealth'),box=document.getElementById('opsHealthOut');
   if(!box)return;
@@ -2468,7 +2502,10 @@ async function loadOpsHealth(){
         '<td>'+Number(j.recent_failures||0)+'</td></tr>').join('')+
       '</tbody></table></div>'+
       '<div class="muted tiny" style="margin-top:9px">'+esc(d.note||'')+'</div>';
-  }catch(e){box.className='error';box.textContent=e.message||'Health check failed'}
+  }catch(e){
+    box.className='warning';
+    box.textContent='The job audit could not load. The Neon database connection is failing. Check System & Risk → Decision Memory diagnostics and correct DATABASE_URL in Vercel Production. Details: '+String(e?.message||'Unknown request failure').slice(0,200);
+  }
   finally{if(btn)btn.disabled=false}
 }
 async function loadEvidenceScoreboard(){
@@ -2526,6 +2563,7 @@ document.getElementById('preflight').addEventListener('click',runPreflight);
 document.getElementById('alpacaDiag').addEventListener('click',runAlpacaDiagnostics);
 document.getElementById('stockChallengers').addEventListener('click',()=>compareChallengerStrategies('equity'));
 document.getElementById('cryptoChallengers').addEventListener('click',()=>compareChallengerStrategies('crypto'));
+document.getElementById('researchCycle').addEventListener('click',runContinuousResearch);
 document.getElementById('opsHealth').addEventListener('click',loadOpsHealth);
 document.getElementById('evidenceScoreboard').addEventListener('click',loadEvidenceScoreboard);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
