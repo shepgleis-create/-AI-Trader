@@ -1,4 +1,5 @@
 import { requireDashboardAuth } from '../lib/auth.js';
+import { cronDatabaseConfig } from '../lib/cron-telemetry.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
@@ -61,8 +62,12 @@ export default async function handler(req, res) {
       }
     }
 
+    const cronDatabase=cronDatabaseConfig();
     return res.status(200).json({
       mode: 'PAPER',
+      automation_database_configured:cronDatabase.valid,
+      automation_blocked_by_config:String(process.env.AUTO_TRADING_ENABLED||'').toLowerCase()==='true'&&!cronDatabase.valid,
+      automation_setup_issue:cronDatabase.error,
       automation_enabled: String(process.env.AUTO_TRADING_ENABLED || '').toLowerCase() === 'true',
       gemini_configured: Boolean(process.env.GEMINI_API_KEY),
       account: {
