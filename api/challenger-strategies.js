@@ -42,16 +42,26 @@ export default async function handler(req,res){
   try{
     const bars=isCrypto?await cryptoBars(effective,key,secret):
       await fetchBarsForSymbols(effective,key,secret,450);
-    const result=effective.map(symbol=>({
-      symbol,bars:(bars[symbol]||[]).length,
-      comparisons:runChallengerComparison(bars[symbol]||[],{assetClass:isCrypto?'crypto':'equity'})
-    }));
+    const result=effective.map(symbol=>{
+      const history=bars[symbol]||[];
+      const comparisons=runChallengerComparison(history,{assetClass:isCrypto?'crypto':'equity'});
+      const eligible=comparisons.filter(c=>c.state==='PAPER_RESEARCH_CANDIDATE')
+        .sort((a,b)=>(b.validation?.profit_factor||0)-(a.validation?.profit_factor||0));
+      const ordered=[...comparisons].sort((a,b)=>{
+        const aValid=a.state==='PAPER_RESEARCH_CANDIDATE'?1:0;
+        const bValid=b.state==='PAPER_RESEARCH_CANDIDATE'?1:0;
+        return bValid-aValid||(b.validation?.mean_net_return??-Infinity)-(a.validation?.mean_net_return??-Infinity);
+      });
+      return {symbol,bars:history.length,comparisons:ordered,
+        research_shortlist:eligible.slice(0,3).map(c=>c.strategy),
+        insufficient_evidence:eligible.length===0};
+    });
     res.setHeader('Cache-Control','no-store');
     return res.status(200).json({
       mode:'PAPER_RESEARCH',asset_class:isCrypto?'crypto':'equity',
       generated_at:new Date().toISOString(),auto_execution:false,symbols:effective,
       result,
-      tournament:{strategies_per_symbol:4,validation:'chronological 70/30 split',promotion:'manual review only',orders_submitted:0},
+      tournament:{strategies_per_symbol:12,validation:'chronological 70/30 split',promotion:'manual review only',orders_submitted:0},
       limitations:[
         'Uses todays requested symbols; survivorship and selection bias are possible.',
         'Signals use prior daily bars; the next open is the simulated entry.',
@@ -59,7 +69,10 @@ export default async function handler(req,res){
         'Trading costs are hypothetical buffers, not measured Alpaca commissions or execution slippage.',
         'Compounded returns assume sequential non-overlapping full-notional trades; they are not portfolio returns.',
         'Stop gaps are simulated at the opening price; intrabar execution remains hypothetical.',
-        'A promising simulation does not automatically change any active trading strategy.'
+        'A promising simulation does not automatically change any active trading strategy.',
+        'Twelve tested variants increase multiple-comparison and overfitting risk; rankings are exploratory.',
+        'Training trades that exit into the validation period are excluded from both partitions.',
+        'Research shortlists require adequate samples and positive train and validation evidence; they are not investment advice.'
       ]
     });
   }catch(e){return res.status(502).json({error:String(e?.message||'Strategy comparison failed').slice(0,220)})}
