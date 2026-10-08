@@ -1,3 +1,4 @@
+import { withCronTelemetry } from '../lib/cron-telemetry.js';
 import { fetchMarketScan, fetchBarsForSymbols, marketRiskMetrics, SECTOR_ETFS } from '../lib/strategy.js';
 import { getAiTradeDecision } from '../lib/ai.js';
 import { buildCandidateContext } from '../lib/context.js';
@@ -106,7 +107,7 @@ async function latestExecutionSnapshot(symbol, key, secret) {
   return { price, bid, ask, spread_pct: spreadPct, age_seconds: ageSeconds, timestamp };
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const key = process.env.ALPACA_API_KEY;
@@ -947,3 +948,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: error.message || 'Automation cycle failed' });
   }
 }
+
+export default withCronTelemetry('auto-cycle',handler);
