@@ -51,11 +51,14 @@ export default async function handler(req,res){
       mode:'PAPER_RESEARCH',asset_class:isCrypto?'crypto':'equity',
       generated_at:new Date().toISOString(),auto_execution:false,symbols:effective,
       result,
+      tournament:{strategies_per_symbol:4,validation:'chronological 70/30 split',promotion:'manual review only',orders_submitted:0},
       limitations:[
         'Uses todays requested symbols; survivorship and selection bias are possible.',
         'Signals use prior daily bars; the next open is the simulated entry.',
         'Assumes stop-first on ambiguous same-day stop and target touches.',
         'Trading costs are hypothetical buffers, not measured Alpaca commissions or execution slippage.',
+        'Compounded returns assume sequential non-overlapping full-notional trades; they are not portfolio returns.',
+        'Stop gaps are simulated at the opening price; intrabar execution remains hypothetical.',
         'A promising simulation does not automatically change any active trading strategy.'
       ]
     });
