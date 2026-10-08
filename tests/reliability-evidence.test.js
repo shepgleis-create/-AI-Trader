@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { simulateDailyStrategy,runChallengerComparison } from '../lib/challenger-strategies.js';
-import { cronSlot, scheduledJobs } from '../lib/cron-telemetry.js';
+import { cronSlot, scheduledJobs, cronDatabaseConfig } from '../lib/cron-telemetry.js';
 import { wilsonLowerBound,evaluateLane,buildEvidenceScoreboard } from '../lib/evidence-scoreboard.js';
 
 const trade=(pnl,time,overrides={})=>({
@@ -68,4 +68,30 @@ test('invalid market bars never create simulated entries',()=>{
   const malformed=Array.from({length:120},(_,i)=>({t:new Date(Date.UTC(2025,0,i+1)).toISOString(),
     o:0,h:0,l:0,c:0}));
   assert.deepEqual(simulateDailyStrategy(malformed,'TREND'),[]);
+});
+
+test('invalid Neon placeholder host fails closed before trying to access network',()=>{
+  const prior=process.env.DATABASE_URL;
+  const alt=process.env.POSTGRES_URL;
+  try{
+    delete process.env.POSTGRES_URL;
+    process.env.DATABASE_URL='postgresql://dbuser:fakepassword@base/neondb?sslmode=require';
+    assert.equal(cronDatabaseConfig().configured,true);
+    assert.equal(cronDatabaseConfig().valid,false);
+    assert.match(cronDatabaseConfig().error,/placeholder host/);
+    process.env.DATABASE_URL='not a connection URL';
+    assert.equal(cronDatabaseConfig().valid,false);
+  }finally{
+    if(prior==null)delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL=prior;
+    if(alt==null)delete process.env.POSTGRES_URL;
+    else process.env.POSTGRES_URL=alt;
+  }
+});
+test('scheduled jobs now include independent continuous market research',()=>{
+  assert.ok(scheduledJobs().includes('research-cycle'));
+  assert.equal(cronSlot('research-cycle','2026-10-08T10:01:00Z'),
+    cronSlot('research-cycle','2026-10-08T10:29:00Z'));
+  assert.notEqual(cronSlot('research-cycle','2026-10-08T10:29:00Z'),
+    cronSlot('research-cycle','2026-10-08T10:30:00Z'));
 });
