@@ -16,7 +16,9 @@ function expectedNow(job,now){
   if(job==='crypto-risk-cycle'||job==='research-cycle')return true;
   if(day===0||day===6)return false;
   if(job==='outcome-cycle')return hour===22 && minute>=15;
-  if(job==='shadow-router-cycle')return hour>=15&&hour<=20;
+  if(job==='shadow-router-cycle')return (hour===15||hour===17||hour===19)&&minute>=5;
+  if(job==='multi-asset-outcome-cycle')return hour>=14&&hour<=22&&minute>=35;
+  if(job==='options-risk-cycle'||job==='auto-cycle')return hour>=13&&hour<=21;
   return hour>=13&&hour<=22;
 }
 export function evaluateJobHealth(job,rows,now){
