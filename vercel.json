@@ -33,6 +33,10 @@
     {
       "path": "/api/research-cycle",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/forward-grade-cycle",
+      "schedule": "45 22 * * 1-5"
     }
   ]
 }
