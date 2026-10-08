@@ -7,24 +7,25 @@ const SCHEDULES={
   'options-risk-cycle':{kind:'weekday',minutes:15},
   'outcome-cycle':{kind:'weekday_daily',minutes:1440},
   'shadow-router-cycle':{kind:'weekday_sparse',minutes:120},
-  'multi-asset-outcome-cycle':{kind:'weekday',minutes:60}
+  'multi-asset-outcome-cycle':{kind:'weekday',minutes:60},
+  'research-cycle':{kind:'continuous',minutes:30}
 };
 
 function expectedNow(job,now){
   const day=now.getUTCDay(),hour=now.getUTCHours(),minute=now.getUTCMinutes();
-  if(job==='crypto-risk-cycle')return true;
+  if(job==='crypto-risk-cycle'||job==='research-cycle')return true;
   if(day===0||day===6)return false;
   if(job==='outcome-cycle')return hour===22 && minute>=15;
   if(job==='shadow-router-cycle')return hour>=15&&hour<=20;
   return hour>=13&&hour<=22;
 }
 function evaluate(job,rows,now){
-  const settings=SCHEDULES[job];
+  const settings=SCHEDULES[job]||{kind:'unlisted',minutes:15};
   const recent=rows.find(r=>r.job===job)||null;
   const relevant=rows.filter(r=>r.job===job);
   const active=expectedNow(job,now);
   const age=recent?Math.max(0,(now-new Date(recent.started_at))/60000):null;
-  const threshold=job==='crypto-risk-cycle'?50:job==='outcome-cycle'?1800:job==='shadow-router-cycle'?195:settings.minutes===60?150:90;
+  const threshold=job==='crypto-risk-cycle'?50:job==='research-cycle'?90:job==='outcome-cycle'?1800:job==='shadow-router-cycle'?195:settings.minutes===60?150:90;
   const failureCount=relevant.filter(r=>r.status==='ERROR').length;
   const state=recent?.status==='RUNNING'&&age>5?'STALLED':
     active&&age!=null&&age>threshold?'STALE':
@@ -53,6 +54,9 @@ export default async function handler(req,res){
   try{data=await recentCronRuns();}
   catch(error){data={configured:config.configured,rows:[],error:'Job audit backend unavailable. Check Neon DATABASE_URL in Vercel Production.'}}
   const now=new Date();
+  // Every registered cron worker must produce a health row, even if its
+  // schedule metadata has not been updated yet. Never let one new job
+  // take down the entire status endpoint.
   const jobs=scheduledJobs().map(job=>evaluate(job,data.rows,now));
   return res.status(200).json({
     generated_at:now.toISOString(),
