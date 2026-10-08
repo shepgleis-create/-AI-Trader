@@ -4,6 +4,7 @@ import { fetchMarketScan } from '../lib/strategy.js';
 import { fetchCryptoScan } from '../lib/multi-asset.js';
 import { fetchNewsContext } from '../lib/context.js';
 import { newDecisionCycleId,saveDecisionMemory } from '../lib/decision-memory.js';
+import { assessResearchCandidate } from '../lib/research-lenses.js';
 
 function preview(candidate){
   if(!candidate)return null;
@@ -38,6 +39,7 @@ async function handler(req,res){
     catch(error){newsError=String(error?.message||'News feed failed').slice(0,180)}
   }
   const headlineCount=Object.values(articles).reduce((n,arr)=>n+(arr?.length||0),0);
+  const researchLenses=topStocks.map(c=>assessResearchCandidate(c,articles[c.symbol]||[]));
   const errors={
     ...(stocks.status==='rejected'?{stocks:String(stocks.reason?.message||'Stock scan failed').slice(0,180)}:{}),
     ...(crypto.status==='rejected'?{crypto:String(crypto.reason?.message||'Crypto scan failed').slice(0,180)}:{}),
@@ -60,7 +62,7 @@ async function handler(req,res){
         regime:stocks.value?.regime||null,
         candidates:topStocks,
         meta:{crypto_candidates:topCrypto.map(preview),
-          news:articles,headlines_seen:headlineCount,generated_at,
+          news:articles,research_lenses:researchLenses,headlines_seen:headlineCount,generated_at,
           scan_errors:errors}
       });
     }catch(e){memory={configured:true,saved:false,reason:'Neon research write failed'}}
@@ -84,7 +86,7 @@ async function handler(req,res){
       candidates:topStocks.map(preview)},
     crypto:{ok:crypto.status==='fulfilled',deeply_analyzed:crypto.value?.deeply_analyzed??null,
       candidates:topCrypto.map(preview)},
-    headlines_seen:headlineCount,headlines:articles,
+    headlines_seen:headlineCount,headlines:articles,research_lenses:researchLenses,
     memory_saved:Boolean(memory?.saved),storage_issue:memory?.reason||db.error||null,
     errors
   });
