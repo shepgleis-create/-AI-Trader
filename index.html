@@ -420,6 +420,13 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Cron Reliability</div>
+      <p class="muted">Actual scheduled-worker run records from Neon, with duplicate suppression, failures and the last recorded action. A missing record means unverified, not healthy.</p>
+      <button id="opsHealth">Refresh Job Health</button>
+      <div id="opsHealthOut" class="empty">Checking scheduled job history…</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Automation Cycle</div>
       <p class="muted">Runs the exact same autonomous cycle used by Vercel Cron. While AUTO_TRADING_ENABLED=false it remains a dry run and will not submit a new automated order.</p>
       <button id="runcycle">Run Automation Cycle Now</button>
@@ -495,6 +502,13 @@ body{padding:0;overflow-x:hidden}
       <p class="muted">During market hours, the top qualifying scanner candidate can be submitted as a tiny bracket-protected paper order. Calibration cap remains $25 until the execution path is proven.</p>
       <button id="paperbuy" disabled>Run a market scan first</button>
       <div id="paperresult" class="muted"></div>
+    </div>
+
+    <div class="card wide">
+      <div class="label">Evidence Scoreboard</div>
+      <p class="muted">Paper-fill strategy ranking with assumed trading costs, chronological validation and sample-size warnings. Research only; no automatic risk increases.</p>
+      <button id="evidenceScoreboard">Refresh Strategy Evidence</button>
+      <div id="evidenceScoreboardOut" class="empty">Waiting for actual filled paper trades…</div>
     </div>
 
     <div class="card wide">
@@ -821,6 +835,7 @@ function routeWorkspaceCards(){
     'Multi-Asset AI Router':'markets-ai',
     'Shadow Router Research':'markets-ai',
 
+    'Cron Reliability':'automation',
     'Automation Cycle':'automation',
     'Gemini Decision + Hard Risk Gate':'automation',
 
@@ -831,6 +846,7 @@ function routeWorkspaceCards(){
     'Intraday Calibration Backtest':'research',
     'Research Backtest':'research',
     'Out-of-Sample Robustness Lab':'research',
+    'Evidence Scoreboard':'research',
     'Strategy Attribution':'research',
     'Multi-Asset Performance Lab':'research',
     'Trade Quality · MAE / MFE':'research',
@@ -858,7 +874,7 @@ function routeWorkspaceCards(){
   });
 
   setupSubWorkspace('research',[
-    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Strategy Attribution','Multi-Asset Performance Lab','Trade Quality · MAE / MFE','Regime Learning Matrix']},
+    {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Evidence Scoreboard','Strategy Attribution','Multi-Asset Performance Lab','Trade Quality · MAE / MFE','Regime Learning Matrix']},
     {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
     {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Shadow Outcome Scorecard','Filter Outcome Attribution']},
     {key:'recommendations',label:'Recommendations',labels:['Adaptive Research Recommendations','Shadow A/B Challenger Lab']}
@@ -2390,6 +2406,59 @@ async function loadHistory(){
   }catch(e){box.className='error';box.textContent=e.message||'Could not load journal'}
 }
 
+
+async function loadOpsHealth(){
+  const btn=document.getElementById('opsHealth'),box=document.getElementById('opsHealthOut');
+  if(!box)return;
+  if(btn)btn.disabled=true;
+  box.textContent='Reading scheduled worker records…';
+  try{
+    const r=await apiFetch('/api/ops-health',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Worker health unavailable');
+    const jobs=d.jobs||[];
+    box.className='';
+    box.innerHTML=
+      '<div class="kv"><span class="muted">Paper auto entries</span><strong class="'+(d.automatic_entries_enabled?'positive':'warning')+'">'+(d.automatic_entries_enabled?'ENABLED':'OFF')+'</strong></div>'+
+      '<div class="kv"><span class="muted">Scheduled-run audit</span><strong class="'+(d.storage_connected?'positive':'warning')+'">'+(d.storage_connected?'CONNECTED':'NOT VERIFIED')+'</strong></div>'+
+      (d.storage_issue?'<div class="warning">'+esc(d.storage_issue)+'</div>':'')+
+      '<div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>Job</th><th>Health</th><th>Last action</th><th>Run age</th><th>Errors</th></tr></thead><tbody>'+
+      jobs.map(j=>'<tr><td><strong>'+esc(j.job)+'</strong></td>'+
+        '<td class="'+(j.state==='RECENT'?'positive':j.state==='OFF_HOURS'?'muted':'warning')+'">'+esc(j.state)+'</td>'+
+        '<td>'+esc(j.last_action||'—')+'</td>'+
+        '<td>'+(j.age_minutes==null?'—':Number(j.age_minutes)+'m')+'</td>'+
+        '<td>'+Number(j.recent_failures||0)+'</td></tr>').join('')+
+      '</tbody></table></div>'+
+      '<div class="muted tiny" style="margin-top:9px">'+esc(d.note||'')+'</div>';
+  }catch(e){box.className='error';box.textContent=e.message||'Health check failed'}
+  finally{if(btn)btn.disabled=false}
+}
+async function loadEvidenceScoreboard(){
+  const btn=document.getElementById('evidenceScoreboard'),box=document.getElementById('evidenceScoreboardOut');
+  if(!box)return;
+  if(btn)btn.disabled=true;
+  box.textContent='Evaluating completed paper fills…';
+  try{
+    const r=await apiFetch('/api/evidence-scoreboard',{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Strategy evidence unavailable');
+    const rows=d.ranking||[];
+    box.className='';
+    box.innerHTML=
+      '<div class="muted tiny">Net P/L deducts a hypothetical '+Number(d.total?.cost_assumption_round_trip_bps||10)+' bps round-trip cost buffer. It is NOT broker-reported fee data.</div>'+
+      '<div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>Strategy</th><th>Evidence</th><th>Trades</th><th>Adjusted P/L</th><th>Later Avg/Trade</th><th>Drift</th></tr></thead><tbody>'+
+      rows.map(j=>'<tr><td><strong>'+esc(j.lane)+'</strong></td>'+
+        '<td>'+esc(j.state.replaceAll('_',' '))+'</td>'+
+        '<td>'+Number(j.all?.trades||0)+'</td>'+
+        '<td class="'+(Number(j.all?.estimated_net_pnl||0)>=0?'positive':'negative')+'">'+money(j.all?.estimated_net_pnl||0)+'</td>'+
+        '<td>'+(j.later?.net_expectancy_per_trade==null?'—':money(j.later.net_expectancy_per_trade))+'</td>'+
+        '<td>'+(j.drift_warning?'WATCH':'—')+'</td></tr>').join('')+
+      '</tbody></table></div>'+
+      '<div class="muted tiny" style="margin-top:9px">'+esc(d.sample_warning||'')+' No automatic strategy promotion or live-money enablement.</div>';
+  }catch(e){box.className='error';box.textContent=e.message||'Evidence scoreboard failed'}
+  finally{if(btn)btn.disabled=false}
+}
+
 document.getElementById('refresh').addEventListener('click',async()=>{
   await load();
   await loadHistory();
@@ -2417,6 +2486,8 @@ document.getElementById('runcycle').addEventListener('click',runAutomationCycle)
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('preflight').addEventListener('click',runPreflight);
 document.getElementById('alpacaDiag').addEventListener('click',runAlpacaDiagnostics);
+document.getElementById('opsHealth').addEventListener('click',loadOpsHealth);
+document.getElementById('evidenceScoreboard').addEventListener('click',loadEvidenceScoreboard);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
 document.getElementById('memoryStatus').addEventListener('click',loadMemoryStatus);
 document.getElementById('gradeOutcomes').addEventListener('click',gradeDecisionOutcomes);
@@ -2442,6 +2513,7 @@ hideLogin();
     await loadMemoryStatus();
     await loadMultiAssetMemory();
     await loadShadowOutcomeReport();
+    await Promise.allSettled([loadOpsHealth(),loadEvidenceScoreboard()]);
   }catch{}
 })();
 </script>
