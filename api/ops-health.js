@@ -19,7 +19,7 @@ function expectedNow(job,now){
   if(job==='shadow-router-cycle')return hour>=15&&hour<=20;
   return hour>=13&&hour<=22;
 }
-function evaluate(job,rows,now){
+export function evaluateJobHealth(job,rows,now){
   const settings=SCHEDULES[job]||{kind:'unlisted',minutes:15};
   const recent=rows.find(r=>r.job===job)||null;
   const relevant=rows.filter(r=>r.job===job);
@@ -57,7 +57,7 @@ export default async function handler(req,res){
   // Every registered cron worker must produce a health row, even if its
   // schedule metadata has not been updated yet. Never let one new job
   // take down the entire status endpoint.
-  const jobs=scheduledJobs().map(job=>evaluate(job,data.rows,now));
+  const jobs=scheduledJobs().map(job=>evaluateJobHealth(job,data.rows,now));
   return res.status(200).json({
     generated_at:now.toISOString(),
     mode:'PAPER',
