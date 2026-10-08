@@ -1,3 +1,4 @@
+import { withCronTelemetry } from '../lib/cron-telemetry.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
 import { fetchMarketClock } from '../lib/alpaca-clock.js';
 import { fetchMarketScan } from '../lib/strategy.js';
@@ -77,7 +78,7 @@ async function updateChallengerResearch(memory,decision,lanes){
   }
 }
 
-export default async function handler(req,res){
+async function handler(req,res){
   if(req.method!=='GET') return res.status(405).json({error:'Method not allowed'});
 
   const cronSecret=process.env.CRON_SECRET;
@@ -353,3 +354,5 @@ export default async function handler(req,res){
     return res.status(500).json({error:error?.message||'Shadow multi-asset router failed'});
   }
 }
+
+export default withCronTelemetry('shadow-router-cycle',handler);
