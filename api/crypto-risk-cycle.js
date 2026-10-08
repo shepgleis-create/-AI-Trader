@@ -1,3 +1,4 @@
+import { withCronTelemetry } from '../lib/cron-telemetry.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
@@ -32,7 +33,7 @@ function isAutoCryptoId(v){
   return String(v||'').startsWith('aitr-c-auto-');
 }
 
-export default async function handler(req,res){
+async function handler(req,res){
   if(req.method!=='GET')return res.status(405).json({error:'Method not allowed'});
 
   const cronSecret=process.env.CRON_SECRET;
@@ -307,3 +308,5 @@ export default async function handler(req,res){
     return res.status(500).json({error:error?.message||'Crypto automation cycle failed'});
   }
 }
+
+export default withCronTelemetry('crypto-risk-cycle',handler);
