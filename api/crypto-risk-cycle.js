@@ -154,10 +154,10 @@ async function handler(req,res){
       new Date(o.submitted_at||0).getTime()>=cutoff
     );
 
-    if(!enabled){
+    if(!enabled||req.cronAuditLockUnavailable){
       actions.push({
         type:'crypto_entry_lock',
-        reason:'AUTO_TRADING_ENABLED is OFF; autonomous crypto entries are dry-run only'
+        reason:req.cronAuditLockUnavailable?'Cron lease unavailable; new entries blocked, exits monitored':'AUTO_TRADING_ENABLED is OFF; autonomous crypto entries are dry-run only'
       });
       return res.status(200).json({
         ok:true,
