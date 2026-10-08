@@ -2486,8 +2486,11 @@ async function loadOpsHealth(){
   box.textContent='Reading scheduled worker records…';
   try{
     const r=await apiFetch('/api/ops-health',{cache:'no-store'});
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.error||'Worker health unavailable');
+    const raw=await r.text();
+    let d;
+    try{d=JSON.parse(raw)}catch{throw new Error('Job health endpoint returned HTTP '+r.status+' without a valid JSON response.')}
+    if(!r.ok)throw new Error(d.error||'Job health HTTP '+r.status);
+    if(!Array.isArray(d.jobs))throw new Error('Job health response did not include a job list.');
     const jobs=d.jobs||[];
     box.className='';
     box.innerHTML=
@@ -2504,7 +2507,7 @@ async function loadOpsHealth(){
       '<div class="muted tiny" style="margin-top:9px">'+esc(d.note||'')+'</div>';
   }catch(e){
     box.className='warning';
-    box.textContent='The job audit could not load. The Neon database connection is failing. Check System & Risk → Decision Memory diagnostics and correct DATABASE_URL in Vercel Production. Details: '+String(e?.message||'Unknown request failure').slice(0,200);
+    box.textContent='Could not load scheduled-job health. This may be an API or browser error and does not prove that Neon is offline. Details: '+String(e?.message||'Unknown request failure').slice(0,220)+'. Try refreshing this panel.';
   }
   finally{if(btn)btn.disabled=false}
 }
