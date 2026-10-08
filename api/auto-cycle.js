@@ -883,7 +883,9 @@ async function handler(req, res) {
     };
 
     let memory;
-    if (!enabled) {
+    if (!enabled || req.cronAuditLockUnavailable) {
+      if(req.cronAuditLockUnavailable)planned.entry_block_reason='Persistent cron lease unavailable; exits-only safety mode';
+      planned.type='entry_dry_run';
       logTraderEvent('entry_dry_run', planned);
       actions.push(planned);
       memory = await persistDecision('ENTRY_DRY_RUN', { risk, intraday, execution: planned });
