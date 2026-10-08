@@ -747,7 +747,7 @@ function updateWorkspaceStatus(d){
   const open=Boolean(d?.market?.is_open);
   setWorkspaceChip('market',open?'OPEN':'CLOSED',open?'positive':'');
   const auto=Boolean(d?.automation_enabled);
-  setWorkspaceChip('auto',auto?'ON':'OFF',auto?'positive':'warning');
+  setWorkspaceChip('auto',d?.automation_blocked_by_config?'DB LOCK':auto?'ON':'OFF',d?.automation_blocked_by_config?'warning':auto?'positive':'warning');
   const ai=Boolean(d?.gemini_configured);
   setWorkspaceChip('aI',ai?'READY':'MISSING',ai?'positive':'negative');
 
@@ -965,9 +965,9 @@ async function load(){
     automationIsEnabled=Boolean(d.automation_enabled);
     const marketEl=document.getElementById('market'); marketEl.textContent=marketIsOpen?'OPEN':'CLOSED'; marketEl.className='value '+(marketIsOpen?'positive':'');
     document.getElementById('next').textContent=marketIsOpen?'Next close: '+new Date(d.market.next_close).toLocaleString():'Next open: '+new Date(d.market.next_open).toLocaleString();
-    document.getElementById('automation').textContent=d.automation_enabled?'ON':'OFF';
-    document.getElementById('automation').className='value '+(d.automation_enabled?'positive':'warning');
-    document.getElementById('brain').textContent=d.gemini_configured?'Gemini configured':'Gemini key missing';
+    document.getElementById('automation').textContent=d.automation_blocked_by_config?'DB LOCK':d.automation_enabled?'ON':'OFF';
+    document.getElementById('automation').className='value '+(d.automation_enabled&&!d.automation_blocked_by_config?'positive':'warning');
+    document.getElementById('brain').textContent=d.automation_blocked_by_config?'Neon database setup required before new automatic entries':d.gemini_configured?'Gemini configured':'Gemini key missing';
     updateWorkspaceStatus(d);
     const op=document.getElementById('overviewPositions');
     if(op)op.textContent=String((d.positions||[]).length);
