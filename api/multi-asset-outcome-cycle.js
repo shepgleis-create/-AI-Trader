@@ -1,3 +1,4 @@
+import { withCronTelemetry } from '../lib/cron-telemetry.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
 import {
   decisionMemoryConfigured,
@@ -7,7 +8,7 @@ import {
 } from '../lib/decision-memory.js';
 import { loadOutcomeBars, gradeMultiAssetDecision } from '../lib/multi-asset-outcomes.js';
 
-export default async function handler(req,res){
+async function handler(req,res){
   if(req.method!=='GET') return res.status(405).json({error:'Method not allowed'});
 
   const cronSecret=process.env.CRON_SECRET;
@@ -65,3 +66,5 @@ export default async function handler(req,res){
     return res.status(500).json({error:error?.message||'Multi-asset outcome grading failed'});
   }
 }
+
+export default withCronTelemetry('multi-asset-outcome-cycle',handler);
