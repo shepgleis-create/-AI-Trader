@@ -38,7 +38,9 @@ async function handler(req,res){
   for(const row of rows){
    const day=new Date(row.observed_at).toISOString().slice(0,10);
    const future=(data[row.symbol]||[]).filter(b=>String(b.t).slice(0,10)>day&&String(b.t).slice(0,10)<today&&Number(b.c)>0).sort((a,b)=>String(a.t).localeCompare(String(b.t)));
-   const values=[1,3,5].map(h=>row['return_'+h+'d']!=null||future.length<h?null:Number(future[h-1].c)/Number(row.reference_price)-1);
+   const reference=Number(row.reference_price);
+   if(!Number.isFinite(reference)||reference<=0)continue;
+   const values=[1,3,5].map(h=>row['return_'+h+'d']!=null||future.length<h?null:Number(future[h-1].c)/reference-1);
    if(values.every(x=>x===null))continue;
    await db.query('UPDATE forward_research_signals SET return_1d=COALESCE(return_1d,$2),return_3d=COALESCE(return_3d,$3),return_5d=COALESCE(return_5d,$4),evaluated_at=NOW() WHERE id=$1',[row.id,...values]);
    updated++;fields+=values.filter(x=>x!==null).length;
