@@ -491,6 +491,14 @@ body{padding:0;overflow-x:hidden}
     </div>
 
     <div class="card wide">
+      <div class="label">Stock & Crypto Challenger Strategies</div>
+      <p class="muted">Compare trend, breakout, pullback and mean-reversion rules on historical daily bars, with train/validation splits, assumed trading costs, and no automatic strategy promotion.</p>
+      <button id="stockChallengers">Compare Stock Strategies</button>
+      <button id="cryptoChallengers">Compare Crypto Strategies</button>
+      <div id="challengersOut" class="empty">No strategy comparison loaded yet.</div>
+    </div>
+
+    <div class="card wide">
       <div class="label">Out-of-Sample Robustness Lab</div>
       <p class="muted">Tries multiple threshold, stop-distance and reward-target settings on a training window, then checks those exact settings on a later unseen validation window.</p>
       <button id="robustnessLab">Run Robustness Lab</button>
@@ -846,6 +854,7 @@ function routeWorkspaceCards(){
     'Intraday Calibration Backtest':'research',
     'Research Backtest':'research',
     'Out-of-Sample Robustness Lab':'research',
+    'Stock & Crypto Challenger Strategies':'research',
     'Evidence Scoreboard':'research',
     'Strategy Attribution':'research',
     'Multi-Asset Performance Lab':'research',
@@ -875,7 +884,7 @@ function routeWorkspaceCards(){
 
   setupSubWorkspace('research',[
     {key:'performance',label:'Performance',labels:['Benchmark Lab','Research Evidence Gate','Evidence Scoreboard','Strategy Attribution','Multi-Asset Performance Lab','Trade Quality · MAE / MFE','Regime Learning Matrix']},
-    {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab']},
+    {key:'backtests',label:'Backtests',labels:['Intraday Calibration Backtest','Research Backtest','Out-of-Sample Robustness Lab','Stock & Crypto Challenger Strategies']},
     {key:'memory',label:'Memory',labels:['Decision Memory','Multi-Asset Memory','Shadow Outcome Scorecard','Filter Outcome Attribution']},
     {key:'recommendations',label:'Recommendations',labels:['Adaptive Research Recommendations','Shadow A/B Challenger Lab']}
   ],'performance');
@@ -2407,6 +2416,35 @@ async function loadHistory(){
 }
 
 
+
+async function compareChallengerStrategies(asset){
+  const box=document.getElementById('challengersOut');
+  const buttons=['stockChallengers','cryptoChallengers'].map(id=>document.getElementById(id));
+  buttons.forEach(b=>b.disabled=true);
+  box.className='empty';box.textContent='Testing historical '+(asset==='crypto'?'crypto':'stock')+' strategy candidates…';
+  try{
+    const params=new URLSearchParams({asset});
+    if(asset!=='crypto'&&lastScanCandidates.length){
+      params.set('symbols',lastScanCandidates.slice(0,8).map(x=>x.symbol).join(','));
+    }
+    const r=await apiFetch('/api/challenger-strategies?'+params.toString(),{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Strategy comparison failed');
+    const rows=(d.result||[]).flatMap(t=>(t.comparisons||[]).map(c=>({symbol:t.symbol,...c})));
+    box.className='';
+    box.innerHTML=
+      '<div class="muted tiny">Research only · '+esc(String(d.asset_class||''))+' · '+Number(rows.length)+' strategy/symbol combinations</div>'+
+      '<div class="tablewrap" style="margin-top:9px"><table><thead><tr><th>Symbol</th><th>Rule</th><th>Status</th><th>Train trades</th><th>Validation trades</th><th>Train avg</th><th>Later avg</th></tr></thead><tbody>'+
+      rows.map(x=>'<tr><td><strong>'+esc(x.symbol)+'</strong></td><td>'+esc(x.strategy)+'</td>'+
+        '<td>'+esc(x.state.replaceAll('_',' '))+'</td>'+
+        '<td>'+Number(x.train?.trades||0)+'</td><td>'+Number(x.validation?.trades||0)+'</td>'+
+        '<td>'+(x.train?.mean_net_return==null?'—':pct(x.train.mean_net_return))+'</td>'+
+        '<td>'+(x.validation?.mean_net_return==null?'—':pct(x.validation.mean_net_return))+'</td></tr>').join('')+
+      '</tbody></table></div>'+
+      '<div class="muted tiny" style="margin-top:9px">'+esc((d.limitations||[]).join(' '))+'</div>';
+  }catch(e){box.className='error';box.textContent=e.message||'Challenger comparison failed'}
+  finally{buttons.forEach(b=>b.disabled=false)}
+}
 async function loadOpsHealth(){
   const btn=document.getElementById('opsHealth'),box=document.getElementById('opsHealthOut');
   if(!box)return;
@@ -2486,6 +2524,8 @@ document.getElementById('runcycle').addEventListener('click',runAutomationCycle)
 document.getElementById('aianalyze').addEventListener('click',runAiAnalysis);
 document.getElementById('preflight').addEventListener('click',runPreflight);
 document.getElementById('alpacaDiag').addEventListener('click',runAlpacaDiagnostics);
+document.getElementById('stockChallengers').addEventListener('click',()=>compareChallengerStrategies('equity'));
+document.getElementById('cryptoChallengers').addEventListener('click',()=>compareChallengerStrategies('crypto'));
 document.getElementById('opsHealth').addEventListener('click',loadOpsHealth);
 document.getElementById('evidenceScoreboard').addEventListener('click',loadEvidenceScoreboard);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
