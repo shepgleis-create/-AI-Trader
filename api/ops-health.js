@@ -1,5 +1,5 @@
 import { requireDashboardAuth } from '../lib/auth.js';
-import { recentCronRuns, scheduledJobs } from '../lib/cron-telemetry.js';
+import { recentCronRuns, scheduledJobs, cronDatabaseConfig } from '../lib/cron-telemetry.js';
 
 const SCHEDULES={
   'auto-cycle':{kind:'weekday',minutes:15},
@@ -48,7 +48,10 @@ export default async function handler(req,res){
   if(!requireDashboardAuth(req,res))return;
   if(req.method!=='GET')return res.status(405).json({error:'Method not allowed'});
   res.setHeader('Cache-Control','no-store');
-  const data=await recentCronRuns();
+  const config=cronDatabaseConfig();
+  let data;
+  try{data=await recentCronRuns();}
+  catch(error){data={configured:config.configured,rows:[],error:'Job audit backend unavailable. Check Neon DATABASE_URL in Vercel Production.'}}
   const now=new Date();
   const jobs=scheduledJobs().map(job=>evaluate(job,data.rows,now));
   return res.status(200).json({
@@ -56,6 +59,8 @@ export default async function handler(req,res){
     mode:'PAPER',
     automatic_entries_enabled:String(process.env.AUTO_TRADING_ENABLED||'').toLowerCase()==='true',
     storage_connected:data.configured&&!data.error,
+    database_config_valid:config.valid,
+    database_setup_action:!config.valid?'Replace DATABASE_URL in Vercel Production with the real Neon pooled connection string, then redeploy.':null,
     storage_issue:data.error||null,
     jobs,
     recent_runs:data.rows.slice(0,40),
