@@ -27,7 +27,7 @@ jobs:
           import fs from "node:fs";
           import vm from "node:vm";
           const html=fs.readFileSync("index.html","utf8");
-          const scripts=[...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/g)];
+          const scripts=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
           if(!scripts.length)throw new Error("No inline dashboard scripts found");
           for(const m of scripts)new vm.Script(m[1],{filename:"index.html"});
           console.log("Validated",scripts.length,"inline script(s)");
