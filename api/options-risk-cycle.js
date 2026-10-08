@@ -1,3 +1,4 @@
+import { withCronTelemetry } from '../lib/cron-telemetry.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
 import { fetchMarketClock } from '../lib/alpaca-clock.js';
 
@@ -16,7 +17,7 @@ function expiryFromOcc(symbol){
   return new Date(`20${s.slice(0,2)}-${s.slice(2,4)}-${s.slice(4,6)}T20:00:00Z`);
 }
 
-export default async function handler(req,res){
+async function handler(req,res){
   if(req.method!=='GET')return res.status(405).json({error:'Method not allowed'});
   const cronSecret=process.env.CRON_SECRET;
   const ok=(cronSecret&&req.headers.authorization===`Bearer ${cronSecret}`)||isDashboardAuthorized(req);
@@ -73,3 +74,5 @@ export default async function handler(req,res){
     return res.status(500).json({error:error?.message||'Options risk cycle failed'});
   }
 }
+
+export default withCronTelemetry('options-risk-cycle',handler);
