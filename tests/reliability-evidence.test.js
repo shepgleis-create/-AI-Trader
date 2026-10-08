@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { simulateDailyStrategy,runChallengerComparison } from '../lib/challenger-strategies.js';
 import { cronSlot, scheduledJobs } from '../lib/cron-telemetry.js';
 import { wilsonLowerBound,evaluateLane,buildEvidenceScoreboard } from '../lib/evidence-scoreboard.js';
 
@@ -49,4 +50,22 @@ test('scoreboard keeps lanes separate and never auto-tunes',()=>{
   assert.equal(a.by_lane.LONG_EQUITY.all.trades,35);
   assert.equal(a.by_lane.LONG_EQUITY.eligible_for_auto_tuning,false);
   assert.equal(a.ranking.length,5);
+});
+
+test('challenger strategies stay research-only and do not auto-apply',()=>{
+  const rows=Array.from({length:180},(_,i)=>{
+    const p=100+Math.sin(i/6)*4+i*.03;
+    return {t:new Date(Date.UTC(2025,0,i+1)).toISOString(),
+      o:p,h:p+2,l:p-2,c:p+Math.sin(i/3),v:100000};
+  });
+  const comparison=runChallengerComparison(rows,{assetClass:'equity'});
+  assert.equal(comparison.length,4);
+  assert.deepEqual(comparison.map(x=>x.strategy),['TREND','BREAKOUT','PULLBACK','MEAN_REVERSION']);
+  assert.ok(comparison.every(x=>x.auto_apply===false));
+  assert.ok(comparison.every(x=>x.validation_begins));
+});
+test('invalid market bars never create simulated entries',()=>{
+  const malformed=Array.from({length:120},(_,i)=>({t:new Date(Date.UTC(2025,0,i+1)).toISOString(),
+    o:0,h:0,l:0,c:0}));
+  assert.deepEqual(simulateDailyStrategy(malformed,'TREND'),[]);
 });
