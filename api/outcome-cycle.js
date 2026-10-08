@@ -1,3 +1,4 @@
+import { withCronTelemetry } from '../lib/cron-telemetry.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
 import {
   decisionMemoryConfigured,
@@ -47,7 +48,7 @@ async function fetchDailyBars(symbols,start,end,key,secret){
   return out;
 }
 
-export default async function handler(req,res){
+async function handler(req,res){
   if(req.method!=='GET') return res.status(405).json({error:'Method not allowed'});
 
   const cronSecret=process.env.CRON_SECRET;
@@ -135,3 +136,5 @@ export default async function handler(req,res){
     return res.status(500).json({error:error?.message||'Outcome grading failed'});
   }
 }
+
+export default withCronTelemetry('outcome-cycle',handler);
