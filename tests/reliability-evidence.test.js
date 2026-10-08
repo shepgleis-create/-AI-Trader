@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { simulateDailyStrategy,runChallengerComparison } from '../lib/challenger-strategies.js';
+import { selectDatabaseUrl } from '../lib/database-url.js';
 import { cronSlot, scheduledJobs, cronDatabaseConfig } from '../lib/cron-telemetry.js';
 import { wilsonLowerBound,evaluateLane,buildEvidenceScoreboard } from '../lib/evidence-scoreboard.js';
 
@@ -78,7 +79,7 @@ test('invalid Neon placeholder host fails closed before trying to access network
     process.env.DATABASE_URL='postgresql://dbuser:fakepassword@base/neondb?sslmode=require';
     assert.equal(cronDatabaseConfig().configured,true);
     assert.equal(cronDatabaseConfig().valid,false);
-    assert.match(cronDatabaseConfig().error,/placeholder host/);
+    assert.match(cronDatabaseConfig().error,/No valid PostgreSQL connection URL/);
     process.env.DATABASE_URL='not a connection URL';
     assert.equal(cronDatabaseConfig().valid,false);
   }finally{
@@ -94,4 +95,24 @@ test('scheduled jobs now include independent continuous market research',()=>{
     cronSlot('research-cycle','2026-10-08T10:29:00Z'));
   assert.notEqual(cronSlot('research-cycle','2026-10-08T10:29:00Z'),
     cronSlot('research-cycle','2026-10-08T10:30:00Z'));
+});
+
+test('Neon integration production unpooled URL overrides stale placeholder configuration',()=>{
+  const env={
+    DATABASE_URL:'postgresql://user:password@base/neondb?sslmode=require',
+    DATABASE_URL_UNPOOLED:'postgresql://user:password@ep-test.us-east-2.aws.neon.tech/neondb?sslmode=require'
+  };
+  const picked=selectDatabaseUrl(env);
+  assert.equal(picked.valid,true);
+  assert.equal(picked.key,'DATABASE_URL_UNPOOLED');
+  assert.equal(picked.configured,true);
+  assert.equal(picked.error,null);
+});
+test('proper original production URL is preferred to fallback',()=>{
+  const env={
+    DATABASE_URL:'postgresql://user:password@ep-primary-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require',
+    DATABASE_URL_UNPOOLED:'postgresql://user:password@ep-alternate.us-east-2.aws.neon.tech/neondb?sslmode=require'
+  };
+  assert.equal(selectDatabaseUrl(env).key,'DATABASE_URL');
+  assert.equal(selectDatabaseUrl({DATABASE_URL:'postgresql://bad@base/neondb'}).valid,false);
 });
