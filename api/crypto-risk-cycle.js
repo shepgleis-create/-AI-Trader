@@ -1,4 +1,4 @@
-import { withCronTelemetry } from '../lib/cron-telemetry.js';
+import { withCronTelemetry,cronSlot } from '../lib/cron-telemetry.js';
 import { isDashboardAuthorized } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
@@ -248,7 +248,13 @@ async function handler(req,res){
     for(const item of possible.slice(0,3)){
       const u=new URL('https://data.alpaca.markets/v1beta3/crypto/us/snapshots');
       u.searchParams.set('symbols',item.candidate.symbol);
-      const sp=await jf(u,{headers:h(key,secret)});
+      let sp;
+      try{
+        sp=await jf(u,{headers:h(key,secret),signal:AbortSignal.timeout(4500)});
+      }catch{
+        quoteRejections.push({symbol:item.candidate.symbol,reason:'crypto_quote_request_timed_out'});
+        continue;
+      }
       if(!sp.r.ok){
         quoteRejections.push({symbol:item.candidate.symbol,reason:'crypto_quote_refresh_failed'});
         continue;
@@ -275,7 +281,7 @@ async function handler(req,res){
         candidates_attempted:quoteRejections.length,quote_rejections:quoteRejections});
       return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,scanned:Number(scan.deeply_analyzed||0),actions});
     }
-    const clientId=`aitr-c-auto-${candidate.symbol.replace('/','').toLowerCase()}-${String(Date.now()).slice(-7)}`.slice(0,48);
+    const clientId=`aitr-c-auto-${candidate.symbol.replace('/','').toLowerCase()}-${cronSlot('crypto-risk-cycle')}`.slice(0,48);
     const order=await jf(`${base}/v2/orders`,{
       method:'POST',
       headers:h(key,secret,true),
