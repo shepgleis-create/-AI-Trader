@@ -551,7 +551,8 @@ async function handler(req, res) {
       });
     }
 
-    const scan = await fetchMarketScan(key, secret);
+    // Keep the execution worker inside Vercel's time budget. The research worker still examines 300 names.
+    const scan = await fetchMarketScan(key, secret, {deepLimit:120});
     const cycleId = newDecisionCycleId('auto');
     const entryThreshold = entryThresholdForRegime(scan.regime?.label);
     const held = new Set(positions.map(p => p.symbol));
