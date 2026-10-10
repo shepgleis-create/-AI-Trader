@@ -3,7 +3,7 @@ import { isDashboardAuthorized } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { fetchCryptoScan } from '../lib/multi-asset.js';
-import {isStablecoinCrypto,cryptoEntryRejectionReasons} from '../lib/crypto-eligibility.js';
+import {isStablecoinCrypto,cryptoEntryRejectionReasons,normalizeCryptoSymbol} from '../lib/crypto-eligibility.js';
 
 const STOP=-0.05;
 const TARGET=0.10;
@@ -76,7 +76,7 @@ async function handler(req,res){
     const cryptoParents=recent.filter(o=>String(o?.client_order_id||'').startsWith('aitr-c-'));
     for(const p of positions){
       if(!isCryptoPosition(p))continue;
-      const parent=cryptoParents.find(o=>o.symbol===p.symbol&&Number(o.filled_qty||0)>0);
+      const parent=cryptoParents.find(o=>normalizeCryptoSymbol(o.symbol)===normalizeCryptoSymbol(p.symbol)&&Number(o.filled_qty||0)>0);
       if(!parent)continue;
 
       const plpc=Number(p.unrealized_plpc||0);
