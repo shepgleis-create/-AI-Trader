@@ -222,7 +222,7 @@ async function handler(req,res){
     if(!candidate){
       actions.push({
         type:'crypto_no_setup',
-        reason:'No crypto candidate cleared autonomous quality, liquidity and pump-risk gates',
+        reason:'No eligible crypto setup; '+Object.entries(rejectionSummary).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([name,count])=>name+'='+count).join(', '),
         score_floor:AUTO_SCORE_FLOOR,
         candidates_reviewed:evaluated.length,
         rejection_counts:rejectionSummary,
