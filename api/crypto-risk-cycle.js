@@ -3,7 +3,8 @@ import { isDashboardAuthorized } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { fetchCryptoScan } from '../lib/multi-asset.js';
-import {isStablecoinCrypto,cryptoEntryRejectionReasons,normalizeCryptoSymbol} from '../lib/crypto-eligibility.js';
+import {isStablecoinCrypto,normalizeCryptoSymbol} from '../lib/crypto-eligibility.js';
+import {rankedCryptoSetups,inspectCryptoQuote,planCryptoLimitBuy} from '../lib/crypto-execution.js';
 
 const STOP=-0.05;
 const TARGET=0.10;
@@ -215,13 +216,13 @@ async function handler(req,res){
 
     const scan=await fetchCryptoScan(key,secret);
     const scoreSettings={scoreFloor:AUTO_SCORE_FLOOR,maxSpread:AUTO_MAX_SPREAD,maxVolatility:AUTO_MAX_VOLATILITY};
-    const evaluated=(scan.candidates||[]).map(x=>({candidate:x,reasons:cryptoEntryRejectionReasons(x,scoreSettings)}));
-    const candidate=evaluated.find(x=>!x.reasons.length)?.candidate||null;
+    const evaluated=rankedCryptoSetups(scan.candidates||[],scoreSettings);
+    const possible=evaluated.filter(x=>!x.reasons.length);
     const rejectionSummary={};
     for(const item of evaluated)for(const reason of item.reasons)
       rejectionSummary[reason]=(rejectionSummary[reason]||0)+1;
 
-    if(!candidate){
+    if(!possible.length){
       actions.push({
         type:'crypto_no_setup',
         reason:'No eligible crypto setup; '+Object.entries(rejectionSummary).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([name,count])=>name+'='+count).join(', '),
@@ -240,38 +241,50 @@ async function handler(req,res){
       });
     }
 
-    const u=new URL('https://data.alpaca.markets/v1beta3/crypto/us/snapshots');
-    u.searchParams.set('symbols',candidate.symbol);
-    const sp=await jf(u,{headers:h(key,secret)});
-    if(!sp.r.ok){
-      actions.push({type:'crypto_entry_reject',symbol:candidate.symbol,reason:'Could not refresh crypto quote'});
-      return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,actions});
+    // Recheck up to three independent eligible candidates. Reject stale or costly quotes.
+    // This does not weaken scanner, portfolio, or pump-risk gates.
+    const quoteRejections=[];
+    let candidate=null,plan=null,executionQuote=null,qualityScore=null;
+    for(const item of possible.slice(0,3)){
+      const u=new URL('https://data.alpaca.markets/v1beta3/crypto/us/snapshots');
+      u.searchParams.set('symbols',item.candidate.symbol);
+      const sp=await jf(u,{headers:h(key,secret)});
+      if(!sp.r.ok){
+        quoteRejections.push({symbol:item.candidate.symbol,reason:'crypto_quote_refresh_failed'});
+        continue;
+      }
+      const snapshot=sp.d?.snapshots?.[item.candidate.symbol]||sp.d?.[item.candidate.symbol]||{};
+      const quote=inspectCryptoQuote(snapshot,Date.now(),AUTO_MAX_SPREAD);
+      if(!quote.ok){
+        quoteRejections.push({symbol:item.candidate.symbol,reason:quote.reason});
+        continue;
+      }
+      const proposed=planCryptoLimitBuy(item.candidate,quote,AUTO_NOTIONAL);
+      if(!proposed.ok){
+        quoteRejections.push({symbol:item.candidate.symbol,reason:proposed.reason});
+        continue;
+      }
+      candidate=item.candidate;
+      plan=proposed;
+      executionQuote=quote;
+      qualityScore=item.quality_score;
+      break;
     }
-
-    const s=sp.d?.snapshots?.[candidate.symbol]||sp.d?.[candidate.symbol]||{};
-    const q=s?.latestQuote||s?.latest_quote||{};
-    const t=s?.latestTrade||s?.latest_trade||{};
-    const bid=Number(q.bp||0),ask=Number(q.ap||0),last=Number(t.p||0);
-    const px=ask>0?ask:last;
-    const mid=bid>0&&ask>0?(bid+ask)/2:0;
-    const spread=mid>0?(ask-bid)/mid:null;
-
-    if(!(px>0)||spread==null||spread>AUTO_MAX_SPREAD){
-      actions.push({type:'crypto_entry_reject',symbol:candidate.symbol,reason:'Final crypto quote/spread check failed'});
-      return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,actions});
+    if(!candidate){
+      actions.push({type:'crypto_entry_reject',reason:'All eligible candidate quotes or exchange size rules failed',
+        candidates_attempted:quoteRejections.length,quote_rejections:quoteRejections});
+      return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,scanned:Number(scan.deeply_analyzed||0),actions});
     }
-
-    const limit=(px*1.002).toFixed(px<1?6:px<100?4:2);
     const clientId=`aitr-c-auto-${candidate.symbol.replace('/','').toLowerCase()}-${String(Date.now()).slice(-7)}`.slice(0,48);
     const order=await jf(`${base}/v2/orders`,{
       method:'POST',
       headers:h(key,secret,true),
       body:JSON.stringify({
         symbol:candidate.symbol,
-        notional:String(AUTO_NOTIONAL),
+        qty:plan.qty,
         side:'buy',
         type:'limit',
-        limit_price:limit,
+        limit_price:plan.limit_price,
         time_in_force:'gtc',
         order_class:'simple',
         client_order_id:clientId
@@ -283,9 +296,14 @@ async function handler(req,res){
       symbol:candidate.symbol,
       score:candidate.score,
       pump_dump_risk:candidate.pump_dump_risk,
-      notional:AUTO_NOTIONAL,
-      reference_price:px,
-      limit_price:Number(limit),
+      notional_cap:AUTO_NOTIONAL,
+      estimated_notional:plan.notional_estimate,
+      quantity:plan.qty,
+      quality_score:qualityScore,
+      quote_age_seconds:executionQuote.quote_age_seconds,
+      execution_spread_pct:executionQuote.spread_pct,
+      limit_price:Number(plan.limit_price),
+      alternate_candidate_rejections:quoteRejections,
       submitted:order.r.ok,
       order_id:order.d?.id||null,
       status:order.d?.status||null,
@@ -307,7 +325,10 @@ async function handler(req,res){
         score_floor:AUTO_SCORE_FLOOR,
         max_spread_pct:AUTO_MAX_SPREAD,
         max_volatility_14d:AUTO_MAX_VOLATILITY,
-        max_entry_dollars:AUTO_NOTIONAL
+        max_entry_dollars:AUTO_NOTIONAL,
+        order_policy:'EXCHANGE_INCREMENT_ROUNDED_PRICE_CAPPED_LIMIT',
+        quote_max_age_seconds:240,
+        fallback_candidates_checked:3
       },
       actions
     });
