@@ -38,7 +38,7 @@ test('limit-buy size follows exchange increments without exceeding paper budget'
   assert.ok(Number(plan.qty)*Number(plan.limit_price)<=25.0000001);
   assert.ok(Number(plan.limit_price)>=quote.ask);
   assert.ok(Number(plan.qty)*1000%1<1e-6);
-  assert.equal(planCryptoLimitBuy({...candidate('BTC/USD',95),min_order_size:'0.01'},quote,25).reason,
+  assert.equal(planCryptoLimitBuy({...candidate('BTC/USD',95),min_order_size:'1'},quote,25).reason,
     'crypto_minimum_size_above_notional_cap');
 });
 
