@@ -3,6 +3,7 @@ import { isDashboardAuthorized } from '../lib/auth.js';
 import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { fetchCryptoScan } from '../lib/multi-asset.js';
+import {isStablecoinCrypto,cryptoEntryRejectionReasons} from '../lib/crypto-eligibility.js';
 
 const STOP=-0.05;
 const TARGET=0.10;
@@ -146,11 +147,11 @@ async function handler(req,res){
       });
     }
 
-    const cryptoPositions=positions.filter(isCryptoPosition);
-    const autoOpenOrders=openOrders.filter(o=>isAutoCryptoId(o?.client_order_id));
+    const cryptoPositions=positions.filter(p=>isCryptoPosition(p)&&!isStablecoinCrypto(p.symbol));
+    const autoOpenOrders=openOrders.filter(o=>isAutoCryptoId(o?.client_order_id)&&!isStablecoinCrypto(o.symbol));
     const cutoff=Date.now()-AUTO_ENTRY_COOLDOWN_HOURS*3600000;
     const autoAttempts=recent.filter(o=>
-      isAutoCryptoId(o?.client_order_id)&&
+      isAutoCryptoId(o?.client_order_id)&&!isStablecoinCrypto(o.symbol)&&
       new Date(o.submitted_at||0).getTime()>=cutoff
     );
 
@@ -211,25 +212,28 @@ async function handler(req,res){
     }
 
     const scan=await fetchCryptoScan(key,secret);
-    const candidate=(scan.candidates||[]).find(x=>
-      Number(x.score||0)>=AUTO_SCORE_FLOOR&&
-      String(x.pump_dump_risk||'').toUpperCase()==='LOW'&&
-      x.spread_pct!=null&&Number(x.spread_pct)<=AUTO_MAX_SPREAD&&
-      Number(x.volatility_14d||0)<=AUTO_MAX_VOLATILITY&&
-      Number(x.momentum_7d||0)>0
-    )||null;
+    const scoreSettings={scoreFloor:AUTO_SCORE_FLOOR,maxSpread:AUTO_MAX_SPREAD,maxVolatility:AUTO_MAX_VOLATILITY};
+    const evaluated=(scan.candidates||[]).map(x=>({candidate:x,reasons:cryptoEntryRejectionReasons(x,scoreSettings)}));
+    const candidate=evaluated.find(x=>!x.reasons.length)?.candidate||null;
+    const rejectionSummary={};
+    for(const item of evaluated)for(const reason of item.reasons)
+      rejectionSummary[reason]=(rejectionSummary[reason]||0)+1;
 
     if(!candidate){
       actions.push({
         type:'crypto_no_setup',
         reason:'No crypto candidate cleared autonomous quality, liquidity and pump-risk gates',
-        score_floor:AUTO_SCORE_FLOOR
+        score_floor:AUTO_SCORE_FLOOR,
+        candidates_reviewed:evaluated.length,
+        rejection_counts:rejectionSummary,
+        nearest_candidates:evaluated.slice(0,5).map(x=>({symbol:x.candidate.symbol,score:x.candidate.score,reasons:x.reasons}))
       });
       return res.status(200).json({
         ok:true,
         mode:'PAPER',
         autonomous_entry_enabled:true,
         scanned:Number(scan.deeply_analyzed||0),
+        stablecoins_excluded:Number(scan.stablecoins_excluded||0),
         actions
       });
     }
@@ -296,6 +300,7 @@ async function handler(req,res){
       max_hold_hours:MAX_HOURS,
       rules:{
         max_crypto_positions:1,
+        existing_stablecoins_do_not_occupy_momentum_slot:true,
         entry_cooldown_hours:AUTO_ENTRY_COOLDOWN_HOURS,
         score_floor:AUTO_SCORE_FLOOR,
         max_spread_pct:AUTO_MAX_SPREAD,
