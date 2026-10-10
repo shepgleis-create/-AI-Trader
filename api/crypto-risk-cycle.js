@@ -73,7 +73,7 @@ async function handler(req,res){
     const actions=[];
 
     // App-managed protection applies to both manual and autonomous paper crypto.
-    const cryptoParents=recent.filter(o=>String(o?.client_order_id||'').startsWith('aitr-c-'));
+    const cryptoParents=recent.filter(o=>o?.side==='buy'&&String(o?.client_order_id||'').startsWith('aitr-c-'));
     for(const p of positions){
       if(!isCryptoPosition(p))continue;
       const parent=cryptoParents.find(o=>normalizeCryptoSymbol(o.symbol)===normalizeCryptoSymbol(p.symbol)&&Number(o.filled_qty||0)>0);
@@ -83,7 +83,9 @@ async function handler(req,res){
       const submitted=new Date(parent.filled_at||parent.submitted_at||0).getTime();
       const ageHours=submitted>0?(Date.now()-submitted)/3600000:0;
       let reason=null;
-      if(plpc<=STOP)reason='crypto_app_stop';
+      if(isStablecoinCrypto(p.symbol)&&isAutoCryptoId(parent.client_order_id)&&ageHours>=6)
+        reason='autonomous_stablecoin_cleanup';
+      else if(plpc<=STOP)reason='crypto_app_stop';
       else if(plpc>=TARGET)reason='crypto_app_target';
       else if(ageHours>=MAX_HOURS)reason='crypto_time_exit';
       if(!reason)continue;
