@@ -153,9 +153,12 @@ async function handler(req,res){
     const cryptoPositions=positions.filter(p=>isCryptoPosition(p)&&!isStablecoinCrypto(p.symbol));
     const autoOpenOrders=openOrders.filter(o=>isAutoCryptoId(o?.client_order_id)&&!isStablecoinCrypto(o.symbol));
     const cutoff=Date.now()-AUTO_ENTRY_COOLDOWN_HOURS*3600000;
-    const autoAttempts=recent.filter(o=>
+    // Apply the 24-hour trade cooldown to actual fills, not canceled/rejected/unfilled attempts.
+    // Open entries are separately blocked until they fill or are canceled.
+    const recentFilledEntries=recent.filter(o=>
       isAutoCryptoId(o?.client_order_id)&&!isStablecoinCrypto(o.symbol)&&
-      new Date(o.submitted_at||0).getTime()>=cutoff
+      o?.side==='buy'&&Number(o.filled_qty||0)>0&&
+      new Date(o.filled_at||o.submitted_at||0).getTime()>=cutoff
     );
 
     if(!enabled||req.cronAuditLockUnavailable){
@@ -206,10 +209,10 @@ async function handler(req,res){
       actions.push({type:'crypto_entry_lock',reason:'An autonomous crypto entry order is already open'});
       return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,actions});
     }
-    if(autoAttempts.length>=1){
+    if(recentFilledEntries.length>=1){
       actions.push({
         type:'crypto_entry_lock',
-        reason:`Rolling ${AUTO_ENTRY_COOLDOWN_HOURS}h autonomous crypto entry limit reached`
+        reason:`Rolling ${AUTO_ENTRY_COOLDOWN_HOURS}h filled crypto trade limit reached`
       });
       return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,actions});
     }
