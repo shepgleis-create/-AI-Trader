@@ -8,7 +8,8 @@ const SCHEDULES={
   'outcome-cycle':{kind:'weekday_daily',minutes:1440},
   'shadow-router-cycle':{kind:'weekday_sparse',minutes:120},
   'multi-asset-outcome-cycle':{kind:'weekday',minutes:60},
-  'research-cycle':{kind:'continuous',minutes:30}
+  'research-cycle':{kind:'continuous',minutes:30},
+  'forward-grade-cycle':{kind:'weekday_daily',minutes:1440}
 };
 
 function expectedNow(job,now){
@@ -16,6 +17,7 @@ function expectedNow(job,now){
   if(job==='crypto-risk-cycle'||job==='research-cycle')return true;
   if(day===0||day===6)return false;
   if(job==='outcome-cycle')return hour===22 && minute>=15;
+  if(job==='forward-grade-cycle')return hour===22 && minute>=45;
   if(job==='shadow-router-cycle')return (hour===15||hour===17||hour===19)&&minute>=5;
   if(job==='multi-asset-outcome-cycle')return hour>=14&&hour<=22&&minute>=35;
   if(job==='options-risk-cycle'||job==='auto-cycle')return hour>=13&&hour<=21;
@@ -27,12 +29,12 @@ export function evaluateJobHealth(job,rows,now){
   const relevant=rows.filter(r=>r.job===job);
   const active=expectedNow(job,now);
   const age=recent?Math.max(0,(now-new Date(recent.started_at))/60000):null;
-  const threshold=job==='crypto-risk-cycle'?50:job==='research-cycle'?90:job==='outcome-cycle'?1800:job==='shadow-router-cycle'?195:settings.minutes===60?150:90;
-  const failureCount=relevant.filter(r=>r.status==='ERROR').length;
+  const threshold=job==='crypto-risk-cycle'?50:job==='research-cycle'?90:(job==='outcome-cycle'||job==='forward-grade-cycle')?1800:job==='shadow-router-cycle'?195:settings.minutes===60?150:90;
+  const failureCount=relevant.filter(r=>r.status==='ERROR'||r.status==='TIMEOUT').length;
   const state=recent?.status==='RUNNING'&&age>5?'STALLED':
     active&&age!=null&&age>threshold?'STALE':
     active&&!recent?'NO_RUN_RECORDED':
-    recent?.status==='ERROR'?'LAST_RUN_FAILED':
+    ['ERROR','TIMEOUT'].includes(recent?.status)?'LAST_RUN_FAILED':
     active?'RECENT':'OFF_HOURS';
   return {
     job,expected_cadence_minutes:settings.minutes,
@@ -42,7 +44,7 @@ export function evaluateJobHealth(job,rows,now){
     last_status:recent?.status||null,
     last_http_status:recent?.response_code||null,
     last_action:recent?.action||null,
-    last_error:recent?.status==='ERROR'?recent.detail:null,
+    last_error:['ERROR','TIMEOUT'].includes(recent?.status)?recent.detail:null,
     recent_failures:failureCount,
     recent_runs:relevant.length
   };
