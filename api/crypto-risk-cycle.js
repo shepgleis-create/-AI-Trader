@@ -4,6 +4,7 @@ import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { fetchCryptoScan } from '../lib/multi-asset.js';
 import {isStablecoinCrypto,normalizeCryptoSymbol} from '../lib/crypto-eligibility.js';
+import {cryptoEntryCapacity,hasRecentSameSymbolFill,CRYPTO_PAPER_POLICY} from '../lib/crypto-allocation.js';
 import {rankedCryptoSetups,inspectCryptoQuote,planCryptoLimitBuy} from '../lib/crypto-execution.js';
 
 const STOP=-0.05;
@@ -201,26 +202,19 @@ async function handler(req,res){
       actions.push({type:'crypto_entry_lock',reason:'Portfolio risk gate blocked new crypto entry'});
       return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,portfolio_risk:portfolioRisk,account_risk:accountRisk,actions});
     }
-    if(cryptoPositions.length>=1){
-      actions.push({type:'crypto_entry_lock',reason:'One crypto position is already open'});
-      return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,actions});
-    }
-    if(autoOpenOrders.length){
-      actions.push({type:'crypto_entry_lock',reason:'An autonomous crypto entry order is already open'});
-      return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,actions});
-    }
-    if(recentFilledEntries.length>=1){
-      actions.push({
-        type:'crypto_entry_lock',
-        reason:`Rolling ${AUTO_ENTRY_COOLDOWN_HOURS}h filled crypto trade limit reached`
-      });
+    const capacity=cryptoEntryCapacity({positions,recentFilled:recentFilledEntries,
+      openOrders:autoOpenOrders});
+    if(!capacity.allowed){
+      actions.push({type:'crypto_entry_lock',reason:capacity.reasons.join(' · '),capacity});
       return res.status(200).json({ok:true,mode:'PAPER',autonomous_entry_enabled:true,actions});
     }
 
-    const scan=await fetchCryptoScan(key,secret);
+        const scan=await fetchCryptoScan(key,secret);
     const scoreSettings={scoreFloor:AUTO_SCORE_FLOOR,maxSpread:AUTO_MAX_SPREAD,maxVolatility:AUTO_MAX_VOLATILITY};
     const evaluated=rankedCryptoSetups(scan.candidates||[],scoreSettings);
-    const possible=evaluated.filter(x=>!x.reasons.length);
+    const possible=evaluated.filter(x=>!x.reasons.length&&
+      !capacity.held_symbols.includes(normalizeCryptoSymbol(x.candidate.symbol))&&
+      !hasRecentSameSymbolFill(x.candidate.symbol,recentFilledEntries));
     const rejectionSummary={};
     for(const item of evaluated)for(const reason of item.reasons)
       rejectionSummary[reason]=(rejectionSummary[reason]||0)+1;
@@ -231,6 +225,7 @@ async function handler(req,res){
         reason:'No eligible crypto setup; '+Object.entries(rejectionSummary).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([name,count])=>name+'='+count).join(', '),
         score_floor:AUTO_SCORE_FLOOR,
         candidates_reviewed:evaluated.length,
+        diversification_blocks:evaluated.filter(x=>!x.reasons.length).length-possible.length,
         rejection_counts:rejectionSummary,
         nearest_candidates:evaluated.slice(0,5).map(x=>({symbol:x.candidate.symbol,score:x.candidate.score,reasons:x.reasons}))
       });
@@ -328,7 +323,10 @@ async function handler(req,res){
       target_pct:TARGET,
       max_hold_hours:MAX_HOURS,
       rules:{
-        max_crypto_positions:1,
+        max_crypto_positions:CRYPTO_PAPER_POLICY.maxDistinctMomentumPositions,
+        max_crypto_gross_notional:CRYPTO_PAPER_POLICY.maxMomentumGrossNotional,
+        max_filled_entries_24h:CRYPTO_PAPER_POLICY.maxFilledEntries24h,
+        max_same_symbol_fills_24h:1,
         existing_stablecoins_do_not_occupy_momentum_slot:true,
         entry_cooldown_hours:AUTO_ENTRY_COOLDOWN_HOURS,
         score_floor:AUTO_SCORE_FLOOR,
