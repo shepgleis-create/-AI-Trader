@@ -449,6 +449,13 @@ body{padding:0;overflow-x:hidden}
       <div id="executionTruthOut" class="empty" aria-live="polite">Trading execution not checked yet.</div>
     </div>
 
+    <div class="card wide" id="tradeResearchCard">
+      <div class="label">AI Research Journal · Before Each Paper Entry</div>
+      <p class="muted">Shows the evidence each crypto candidate passed, the AI/quant reviewer and whether an actual paper order followed. It does not claim that a prediction made money.</p>
+      <button id="tradeResearchRefresh" type="button">Refresh AI Research</button>
+      <div id="tradeResearchOut" class="empty" aria-live="polite">Research review history not loaded.</div>
+    </div>
+
     <div class="card wide">
       <div class="label">Automation Cycle</div>
       <p class="muted">Runs the same stock paper-trading cycle as Vercel Cron. Automatic entry depends on your enabled production setting, functioning scheduling, a healthy risk state and a valid Neon job lease. Market scans and order execution are separate from research-only monitoring.</p>
@@ -804,6 +811,7 @@ function autoRefreshExecutionTruth(){
   if(now-executionTruthLastAutomaticAt<120000)return;
   executionTruthLastAutomaticAt=now;
   void loadExecutionTruth();
+  void loadPretradeResearch();
 }
 function showWorkspacePage(page,opts={}){
   if(!workspacePages[page])page='overview';
@@ -892,6 +900,7 @@ function routeWorkspaceCards(){
     'Cron Reliability':'automation',
     'Execution Truth · Broker Verified':'automation',
     'Automation Cycle':'automation',
+    'AI Research Journal · Before Each Paper Entry':'automation',
     'Gemini Decision + Hard Risk Gate':'automation',
 
     'Benchmark Lab':'research',
@@ -2592,6 +2601,46 @@ async function loadTradeTimeline(){
   finally{if(btn)btn.disabled=false}
 }
 
+async function loadPretradeResearch(){
+  const btn=document.getElementById('tradeResearchRefresh'),
+        box=document.getElementById('tradeResearchOut');
+  if(!box)return;
+  if(btn)btn.disabled=true;
+  box.className='empty';box.textContent='Reading saved AI research and broker order links…';
+  try{
+    const r=await apiFetch('/api/trade-research',{cache:'no-store'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||'Research journal unavailable');
+    const summary=d.summary||{},rows=d.records||[];
+    box.className='';
+    box.innerHTML=
+      '<div class="grid" style="margin-top:9px">'+
+        '<div class="card"><div class="label">Reviewed setups</div><div class="value">'+Number(summary.researched||0)+'</div></div>'+
+        '<div class="card"><div class="label">Vetoed</div><div class="value">'+Number(summary.vetoes||0)+'</div></div>'+
+        '<div class="card"><div class="label">Broker orders linked</div><div class="value">'+Number(summary.linked_broker_orders||0)+'</div></div>'+
+      '</div>'+
+      (rows.length?'<div class="timeline-feed">'+rows.slice(0,30).map(x=>{
+        const evidence=x.evidence||{},proof=evidence.quantitative||{};
+        const result=x.approved?'APPROVED':'VETO';
+        const m=evidence.model||null;
+        const risks=Array.isArray(evidence.risks)?evidence.risks:[];
+        return '<div class="timeline-entry">'+
+          '<div class="timeline-primary"><strong>'+esc(x.symbol)+'</strong> '+
+          '<span class="'+(x.approved?'positive':'negative')+'">'+esc(result)+'</span>'+
+          '<span class="muted"> · '+esc(x.reviewer||'—')+(m?' ('+esc(m)+')':'')+'</span></div>'+
+          '<div class="timeline-date">'+brokerTime(x.observed_at)+'</div>'+
+          '<div class="muted" style="font-size:12px">'+esc(x.rationale||'No explanation saved')+'</div>'+
+          '<div class="timeline-details"><span>Scanner score: '+esc(proof.metrics?.score??'—')+'</span>'+
+          '<span>Risk issues: '+esc((proof.reasons||[]).join(', ')||risks.join(', ')||'None recorded')+'</span>'+
+          '<span>Broker order: '+esc(x.order_id||'Not linked')+'</span></div>'+
+        '</div>'
+      }).join('')+'</div>':
+      '<div class="empty">No pretrade AI reviews recorded. This is expected until a candidate passes scanner, account, liquidity and quote checks.</div>')+
+      '<div class="muted tiny" style="margin-top:10px">'+esc(d.note||'')+'</div>';
+  }catch(e){box.className='warning';box.textContent=String(e.message||e).slice(0,220)}
+  finally{if(btn)btn.disabled=false}
+}
+
 async function loadExecutionTruth(){
   const btn=document.getElementById('executionTruth'),box=document.getElementById('executionTruthOut');
   if(!box)return;
@@ -2740,6 +2789,7 @@ document.getElementById('cryptoChallengers').addEventListener('click',()=>compar
 document.getElementById('researchCycle').addEventListener('click',runContinuousResearch);
 document.getElementById('opsHealth').addEventListener('click',loadOpsHealth);
 document.getElementById('executionTruth').addEventListener('click',loadExecutionTruth);
+document.getElementById('tradeResearchRefresh').addEventListener('click',loadPretradeResearch);
 document.getElementById('tradeTimelineRefresh').addEventListener('click',loadTradeTimeline);
 document.getElementById('tradeTimelineAsset').addEventListener('change',renderTradeTimeline);
 document.getElementById('tradeTimelineEvent').addEventListener('change',renderTradeTimeline);
