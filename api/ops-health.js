@@ -31,9 +31,11 @@ export function evaluateJobHealth(job,rows,now){
   const age=recent?Math.max(0,(now-new Date(recent.started_at))/60000):null;
   const threshold=job==='crypto-risk-cycle'?50:job==='research-cycle'?90:(job==='outcome-cycle'||job==='forward-grade-cycle')?1800:job==='shadow-router-cycle'?195:settings.minutes===60?150:90;
   const failureCount=relevant.filter(r=>r.status==='ERROR'||r.status==='TIMEOUT').length;
+  const unconfirmedAudits=relevant.filter(r=>r.status==='AUDIT_UNCONFIRMED').length;
   const state=recent?.status==='RUNNING'&&age>5?'STALLED':
     active&&age!=null&&age>threshold?'STALE':
     active&&!recent?'NO_RUN_RECORDED':
+    recent?.status==='AUDIT_UNCONFIRMED'?'AUDIT_INCOMPLETE':
     ['ERROR','TIMEOUT'].includes(recent?.status)?'LAST_RUN_FAILED':
     active?'RECENT':'OFF_HOURS';
   return {
@@ -44,7 +46,8 @@ export function evaluateJobHealth(job,rows,now){
     last_status:recent?.status||null,
     last_http_status:recent?.response_code||null,
     last_action:recent?.action||null,
-    last_error:['ERROR','TIMEOUT'].includes(recent?.status)?recent.detail:null,
+    last_error:['ERROR','TIMEOUT','AUDIT_UNCONFIRMED'].includes(recent?.status)?recent.detail:null,
+    recent_unconfirmed_audits:unconfirmedAudits,
     recent_failures:failureCount,
     recent_runs:relevant.length
   };
