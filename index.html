@@ -776,6 +776,13 @@ function toggleSidebar(){
   side?.classList.toggle('expanded',expanded);
   backdrop?.classList.toggle('visible',expanded);
 }
+let executionTruthLastAutomaticAt=0;
+function autoRefreshExecutionTruth(){
+  const now=Date.now();
+  if(now-executionTruthLastAutomaticAt<120000)return;
+  executionTruthLastAutomaticAt=now;
+  void loadExecutionTruth();
+}
 function showWorkspacePage(page,opts={}){
   if(!workspacePages[page])page='overview';
   document.querySelectorAll('.page-view').forEach(v=>v.classList.toggle('active',v.dataset.view===page));
@@ -784,6 +791,7 @@ function showWorkspacePage(page,opts={}){
   document.getElementById('workspaceTitle').textContent=meta.title;
   document.getElementById('workspaceSubtitle').textContent=meta.subtitle;
   sessionStorage.setItem('ai_trader_page',page);
+  if(page==='automation')autoRefreshExecutionTruth();
   if(opts.scroll!==false)window.scrollTo({top:0,behavior:'smooth'});
   if(window.innerWidth<=760)closeSidebar();
 }
