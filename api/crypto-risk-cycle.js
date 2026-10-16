@@ -6,6 +6,8 @@ import { fetchCryptoScan } from '../lib/multi-asset.js';
 import {isStablecoinCrypto,normalizeCryptoSymbol} from '../lib/crypto-eligibility.js';
 import {cryptoEntryCapacity,hasRecentSameSymbolFill,CRYPTO_PAPER_POLICY} from '../lib/crypto-allocation.js';
 import {rankedCryptoSetups,inspectCryptoQuote,planCryptoLimitBuy} from '../lib/crypto-execution.js';
+import {researchCryptoEntry} from '../lib/crypto-decision-research.js';
+import {recordTradeResearch,updateTradeResearchOrder} from '../lib/pretrade-research-memory.js';
 
 const STOP=-0.05;
 const TARGET=0.10;
@@ -242,7 +244,7 @@ async function handler(req,res){
     // Recheck up to three independent eligible candidates. Reject stale or costly quotes.
     // This does not weaken scanner, portfolio, or pump-risk gates.
     const quoteRejections=[];
-    let candidate=null,plan=null,executionQuote=null,qualityScore=null;
+    let candidate=null,plan=null,executionQuote=null,qualityScore=null,researchId=null,reviewSource=null;
     for(const item of possible.slice(0,3)){
       const u=new URL('https://data.alpaca.markets/v1beta3/crypto/us/snapshots');
       u.searchParams.set('symbols',item.candidate.symbol);
@@ -268,7 +270,30 @@ async function handler(req,res){
         quoteRejections.push({symbol:item.candidate.symbol,reason:proposed.reason});
         continue;
       }
+      // Actual AI/quantitative research happens BEFORE broker submission.
+      // AI has veto power, never override power over independent safety gates.
+      const review=await researchCryptoEntry({
+        candidate:item.candidate,quote,accountRisk,
+        apiKey:process.env.GEMINI_API_KEY,
+        marketPeers:possible.filter(x=>x.candidate.symbol!==item.candidate.symbol)
+          .slice(0,4).map(x=>x.candidate)
+      });
+      const journal=await recordTradeResearch({
+        symbol:item.candidate.symbol,lane:'CRYPTO',review
+      });
+      actions.push({type:'crypto_research',symbol:item.candidate.symbol,
+        reviewer:review.source,model:review.model||null,
+        approved:review.approved,summary:review.rationale,
+        reasons:review.quantitative?.reasons||[],
+        research_recorded:journal.saved});
+      if(!review.approved){
+        quoteRejections.push({symbol:item.candidate.symbol,reason:'independent_research_veto',
+          detail:review.rationale});
+        continue;
+      }
       candidate=item.candidate;
+      researchId=journal.id||null;
+      reviewSource=review.source;
       plan=proposed;
       executionQuote=quote;
       qualityScore=item.quality_score;
@@ -295,9 +320,14 @@ async function handler(req,res){
       })
     });
 
+    if(researchId)await updateTradeResearchOrder(researchId,{
+      id:order.d?.id||null,status:order.d?.status||(order.r.ok?'submitted':'rejected')
+    });
     actions.push({
       type:'crypto_entry',
       symbol:candidate.symbol,
+      reviewer:reviewSource,
+      research_id:researchId,
       score:candidate.score,
       pump_dump_risk:candidate.pump_dump_risk,
       notional_cap:AUTO_NOTIONAL,
@@ -335,7 +365,9 @@ async function handler(req,res){
         max_entry_dollars:AUTO_NOTIONAL,
         order_policy:'EXCHANGE_INCREMENT_ROUNDED_PRICE_CAPPED_LIMIT',
         quote_max_age_seconds:240,
-        fallback_candidates_checked:3
+        fallback_candidates_checked:3,
+        research_stage:'INDEPENDENT_QUANT_PLUS_OPTIONAL_AI_VETO',
+        emergency_exits_do_not_wait_for_ai:true
       },
       actions
     });
