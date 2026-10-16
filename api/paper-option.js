@@ -3,6 +3,8 @@ import { buildAccountRisk } from '../lib/account-risk.js';
 import { getPortfolioRisk } from '../lib/risk.js';
 import { fetchOptionsForUnderlying } from '../lib/multi-asset.js';
 import { fetchMarketClock } from '../lib/alpaca-clock.js';
+import {reviewLongOption} from '../lib/option-decision-research.js';
+import {recordTradeResearch,updateTradeResearchOrder} from '../lib/pretrade-research-memory.js';
 
 const MAX_PREMIUM_DOLLARS=100;
 const MIN_QUALITY=75;
@@ -117,6 +119,21 @@ export default async function handler(req,res){
       return res.status(409).json({error:'Insufficient options buying power for one contract'});
     }
 
+    const research=await reviewLongOption({
+      contract:candidate,underlying,underlyingPrice,direction,
+      apiKey:process.env.GEMINI_API_KEY
+    });
+    const researchSaved=await recordTradeResearch({
+      lane:direction==='BEARISH'?'LONG_PUT':'LONG_CALL',
+      symbol:contract,review:research
+    });
+    if(!research.approved){
+      return res.status(409).json({error:'Independent option research vetoed this entry',
+        reviewer:research.source,rationale:research.rationale,
+        research_id:researchSaved.id||null,
+        warnings:research.quantitative?.reasons||research.risks||[]});
+    }
+
     const limit=Math.min(ask,mid*1.03).toFixed(2);
     const type=direction==='BEARISH'?'P':'C';
     const clientId=`aitr-o-${type.toLowerCase()}-${underlying.toLowerCase()}-${String(Date.now()).slice(-9)}`.slice(0,48);
@@ -137,12 +154,19 @@ export default async function handler(req,res){
       })
     });
 
+    if(researchSaved.id)await updateTradeResearchOrder(researchSaved.id,{
+      id:order.d?.id||null,
+      status:order.d?.status||(order.r.ok?'accepted':'rejected')
+    });
     if(!order.r.ok)return res.status(order.r.status).json({error:order.d?.message||'Options paper order rejected',details:order.d});
 
     return res.status(200).json({
       ok:true,mode:'PAPER',
       strategy:direction==='BEARISH'?'LONG_PUT':'LONG_CALL',
       underlying,contract,direction,
+      research_reviewer:research.source,
+      research_id:researchSaved.id||null,
+      research_rationale:research.rationale,
       qty:1,limit_price:Number(limit),
       estimated_max_premium_dollars:Number(limit)*100,
       quality_score:candidate.quality_score,
