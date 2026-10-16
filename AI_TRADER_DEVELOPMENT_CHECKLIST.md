@@ -25,14 +25,17 @@ Status language:
 - [x] Maximum two $25 filled crypto entries in rolling 24h, same-symbol anti-churn
 - [x] Existing stablecoins excluded from momentum capacity and scoring
 - [x] Crypto diagnostics updated to show two-slot capacity and real order-fill evidence
-- [x] Broker Truth panel added to Automation workspace, fed by stock/crypto diagnostics
+- [x] Broker Truth panel added to Automation workspace, fed by stock/crypto diagnostics and auto-refreshed on navigation
 - [x] Cron telemetry rewritten to persist audit completion before sending HTTP response
+- [x] Isolated mock test verified audit-complete-before-response ordering for successful and failed workers
+- [x] Existing stock cycle legacy exits/EOD flatten now verify last filled broker order and exact position size before touching positions, preserving mixed/manual accounts
 - [x] Authenticated broker order diagnostic endpoints retained and integrated
 - [x] Unit tests added for crypto allocation, stock protection ownership and EOD rules
-- [x] Source-level JS parse and deterministic helper checks executed via isolated JS harness
+- [x] Mock-broker risk worker integration test created and one matching broker-only stop scenario executed in isolation
+- [x] Source-level JS parse and deterministic helper checks executed via isolated JS harness (21 checks pass after final changes)
 - [ ] Verify all CI test jobs through GitHub Actions (not established by deployment alone)
 - [ ] Verify at least one new broker-accepted stock order and a filled paper trade
-- [ ] Verify actual 5-minute fraction protection worker run next stock market session
+- [ ] Verify actual 5-minute fractional protection worker run next stock market session
 - [ ] Verify actual second eligible crypto position with total notional <= $50
 - [ ] Browser-based screenshot and mobile touch testing (not available in present tools)
 
@@ -51,4 +54,7 @@ Status language:
 ## Verification notes
 - Vercel `READY` and green deployment check do not verify an Alpaca fill.
 - Previous Neon Decision Memory showed 31 `ORDER_REJECTED` stock outcomes with fractional bracket incompatibility and zero `ENTRY_SUBMITTED` at diagnosis time.
+- Local isolated runtime checks executed against latest repository sources: 21 passing checks, dashboard and risk-worker JS parsing.
+- Independent mock-broker paper stop test: bot-owned MSFT was submitted for close, unrelated manual AAPL was left untouched.
+- Broker stock fill confirmation, end-to-end production risk-worker execution, and full GitHub Actions CI execution still require independent verification.
 - The next stock-market session is required for end-to-end validation.
