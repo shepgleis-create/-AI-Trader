@@ -433,6 +433,13 @@ body{padding:0;overflow-x:hidden}
       <div id="opsHealthOut" class="empty">Checking scheduled job history…</div>
     </div>
 
+    <div class="card wide" id="executionTruthCard">
+      <div class="label">Execution Truth · Broker Verified</div>
+      <p class="muted">Actual paper order statuses and recent automated decisions. A BUY decision or accepted order is not a filled trade. Current blocked reasons and open crypto slots appear here without fabricated results.</p>
+      <button id="executionTruth" type="button">Refresh Real Trading Diagnostics</button>
+      <div id="executionTruthOut" class="empty" aria-live="polite">Trading execution not checked yet.</div>
+    </div>
+
     <div class="card wide">
       <div class="label">Automation Cycle</div>
       <p class="muted">Runs the same stock paper-trading cycle as Vercel Cron. Automatic entry depends on your enabled production setting, functioning scheduling, a healthy risk state and a valid Neon job lease. Market scans and order execution are separate from research-only monitoring.</p>
@@ -852,6 +859,7 @@ function routeWorkspaceCards(){
 
     'Continuous Market Research':'automation',
     'Cron Reliability':'automation',
+    'Execution Truth · Broker Verified':'automation',
     'Automation Cycle':'automation',
     'Gemini Decision + Hard Risk Gate':'automation',
 
@@ -2479,6 +2487,64 @@ async function runContinuousResearch(){
   }catch(e){box.className='error';box.textContent='Research scan error: '+(e?.message||'Request failed')}
   finally{if(btn)btn.disabled=false}
 }
+async function loadExecutionTruth(){
+  const btn=document.getElementById('executionTruth'),box=document.getElementById('executionTruthOut');
+  if(!box)return;
+  if(btn)btn.disabled=true;
+  box.className='empty';
+  box.textContent='Comparing Decision Memory with paper broker orders and crypto positions…';
+  const load=async path=>{
+    const response=await apiFetch(path,{cache:'no-store'});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(result.error||'HTTP '+response.status);
+    return result;
+  };
+  const cell=(label,value,tone='')=>'<div class="kv"><span class="muted">'+esc(label)+'</span><strong class="'+tone+'">'+esc(String(value))+'</strong></div>';
+  try{
+    const [stock,crypto]=await Promise.allSettled([
+      load('/api/stock-execution-diagnostics'),load('/api/crypto-diagnostics')
+    ]);
+    const errors=[];
+    let stockHtml='',cryptoHtml='';
+    if(stock.status==='fulfilled'){
+      const d=stock.value,stages=d.decision_stages||[];
+      const count=name=>Number(stages.find(s=>s.stage===name)?.count||0);
+      const filled=Number(d.recently_filled?.length||0);
+      stockHtml='<div style="margin-top:12px"><div class="label">Stock order execution</div>'+
+        cell('Stock orders in recent broker page',Number(d.bot_stock_orders_in_latest_broker_page||0))+
+        cell('Filled stock entries shown',filled,filled?'positive':'warning')+
+        cell('AI BUY orders rejected (14 days)',count('ORDER_REJECTED'),count('ORDER_REJECTED')?'negative':'')+
+        cell('AI decisions skipped (14 days)',count('MODEL_SKIP'))+
+        cell('Recorded entry submissions (14 days)',count('ENTRY_SUBMITTED'))+
+        '<div class="muted tiny">Order history is limited to the broker\'s latest 100 account orders. This is not a lifetime fill count.</div>'+
+        (d.broker_rejections||[]).slice(0,4).map(x=>'<div class="warning">'+esc(x.reason||'Broker rejection')+' · '+Number(x.count||0)+'</div>').join('')+
+      '</div>';
+    }else errors.push('Stock diagnostics: '+stock.reason.message);
+    if(crypto.status==='fulfilled'){
+      const d=crypto.value,p=d.positions||{},o=d.bot_orders||{};
+      const reasons=(d.recent_cycles||[]).slice(0,5);
+      cryptoHtml='<div style="margin-top:14px"><div class="label">Crypto order execution</div>'+
+        cell('Momentum positions',Number(p.momentum?.length||0))+
+        cell('Open momentum slots',Number(p.momentum_slots_available||0))+
+        cell('Recent crypto bot entries',Number(o.entry_orders_seen||0))+
+        cell('Crypto entry attempts in past day',Number(o.entry_attempts_last_24h||0))+
+        (p.momentum||[]).map(x=>cell(x.symbol+' unrealized paper P/L',money(x.unrealized_pl||0),
+          Number(x.unrealized_pl||0)>=0?'positive':'negative')).join('')+
+        '<div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>Latest cycle</th><th>Result</th><th>Reason</th></tr></thead><tbody>'+
+        reasons.map(x=>'<tr><td>'+esc(x.started_at?new Date(x.started_at).toLocaleString():'—')+'</td><td>'+esc(x.action||x.status||'—')+'</td><td>'+esc(x.detail||'—')+'</td></tr>').join('')+
+        '</tbody></table></div>'+
+        '<div class="muted tiny">Broker paper positions are not real-money profits. Accepted orders are not necessarily filled.</div></div>';
+    }else errors.push('Crypto diagnostics: '+crypto.reason.message);
+    if(stock.status==='rejected'&&crypto.status==='rejected')
+      throw new Error(errors.join(' | '));
+    box.className='';
+    box.innerHTML=stockHtml+cryptoHtml+
+      (errors.length?'<div class="warning">'+esc(errors.join(' | '))+'</div>':'')+
+      '<div class="muted tiny" style="margin-top:10px">Broker-reported figures · refreshed '+esc(new Date().toLocaleTimeString())+'</div>';
+  }catch(e){box.className='warning';box.textContent='Execution diagnostics unavailable: '+String(e?.message||'unknown').slice(0,250)}
+  finally{if(btn)btn.disabled=false}
+}
+
 async function loadOpsHealth(){
   const btn=document.getElementById('opsHealth'),box=document.getElementById('opsHealthOut');
   if(!box)return;
@@ -2568,6 +2634,7 @@ document.getElementById('stockChallengers').addEventListener('click',()=>compare
 document.getElementById('cryptoChallengers').addEventListener('click',()=>compareChallengerStrategies('crypto'));
 document.getElementById('researchCycle').addEventListener('click',runContinuousResearch);
 document.getElementById('opsHealth').addEventListener('click',loadOpsHealth);
+document.getElementById('executionTruth').addEventListener('click',loadExecutionTruth);
 document.getElementById('evidenceScoreboard').addEventListener('click',loadEvidenceScoreboard);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
 document.getElementById('memoryStatus').addEventListener('click',loadMemoryStatus);
