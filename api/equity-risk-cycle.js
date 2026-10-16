@@ -78,4 +78,5 @@ async function handler(req,res){
     error:'Equity fraction protection data unavailable',
     reason:String(error?.message||'unknown').slice(0,180)})}
 }
+export {handler as equityRiskHandlerForTests};
 export default withCronTelemetry('equity-risk-cycle',handler);
