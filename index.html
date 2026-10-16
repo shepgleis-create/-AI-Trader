@@ -239,6 +239,15 @@ body{padding:0;overflow-x:hidden}
 }
 
 </style>
+<style>
+.timeline-feed{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+.timeline-entry{border:1px solid #263243;background:#101822;border-radius:13px;padding:12px 14px;display:grid;gap:5px;min-width:0}
+.timeline-primary{font-size:13px;line-height:1.5}
+.timeline-date{font-variant-numeric:tabular-nums;font-size:12px;color:#d7dee9}
+.timeline-details{display:flex;gap:7px 14px;flex-wrap:wrap;font-size:11px;color:#9cabbd}
+#tradeTimelineCard select{background:#141d29;border:1px solid #36465b;color:#e4ebf6;border-radius:9px;padding:9px}
+@media(max-width:650px){.timeline-entry{padding:10px}.timeline-details{gap:5px 12px}#tradeTimelineCard button,#tradeTimelineCard select{flex:1;min-width:115px}}
+</style>
 </head>
 <body>
 <div id="loginOverlay">
@@ -591,6 +600,19 @@ body{padding:0;overflow-x:hidden}
       <div id="memoryAttributionOut" class="empty">No outcome attribution loaded yet.</div>
     </div>
 
+    <div class="card wide" id="tradeTimelineCard">
+      <div class="label">Real Trade Timeline · Stocks, Crypto & Options</div>
+      <p class="muted">Alpaca paper broker activity with actual execution timestamps, including buys, sells, partial fills, order submissions and rejections. All times show your device's local timezone plus UTC.</p>
+      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button type="button" id="tradeTimelineRefresh" style="width:auto;min-height:42px">Refresh Trades & Times</button>
+        <label class="muted" for="tradeTimelineAsset">Asset</label>
+        <select id="tradeTimelineAsset" style="width:auto;min-height:42px"><option value="all">All types</option><option value="us_equity">Stocks</option><option value="crypto">Crypto</option><option value="us_option">Options</option></select>
+        <label class="muted" for="tradeTimelineEvent">Event</label>
+        <select id="tradeTimelineEvent" style="width:auto;min-height:42px"><option value="all">All events</option><option value="fills">Filled trades</option><option value="orders">Orders / other</option></select>
+      </div>
+      <div id="tradeTimelineOut" class="empty" aria-live="polite">Loading brokerage activity when you open History…</div>
+    </div>
+
     <div class="card wide">
       <div class="label">Execution Journal</div>
       <div id="history" class="empty">Loading…</div>
@@ -792,6 +814,7 @@ function showWorkspacePage(page,opts={}){
   document.getElementById('workspaceSubtitle').textContent=meta.subtitle;
   sessionStorage.setItem('ai_trader_page',page);
   if(page==='automation')autoRefreshExecutionTruth();
+  if(page==='history')autoRefreshTradeTimeline();
   if(opts.scroll!==false)window.scrollTo({top:0,behavior:'smooth'});
   if(window.innerWidth<=760)closeSidebar();
 }
@@ -890,6 +913,7 @@ function routeWorkspaceCards(){
     'Filter Outcome Attribution':'research',
 
     'Execution Journal':'history',
+    'Real Trade Timeline · Stocks, Crypto & Options':'history',
 
     'System Preflight':'system',
     'Alpaca Diagnostics':'system',
@@ -2495,6 +2519,79 @@ async function runContinuousResearch(){
   }catch(e){box.className='error';box.textContent='Research scan error: '+(e?.message||'Request failed')}
   finally{if(btn)btn.disabled=false}
 }
+let brokerTimelineData=null,brokerTimelineLoadedAt=0;
+function autoRefreshTradeTimeline(){
+  if(brokerTimelineData&&Date.now()-brokerTimelineLoadedAt<120000){
+    renderTradeTimeline();
+    return;
+  }
+  void loadTradeTimeline();
+}
+function brokerTime(iso){
+  const date=new Date(iso);
+  if(!Number.isFinite(date.getTime()))return 'Unknown time';
+  const local=new Intl.DateTimeFormat(undefined,{year:'numeric',month:'short',day:'numeric',
+    hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'}).format(date);
+  return esc(local)+'<div class="muted tiny">'+esc(date.toISOString())+' UTC</div>';
+}
+function renderTradeTimeline(){
+  const box=document.getElementById('tradeTimelineOut');
+  if(!box||!brokerTimelineData)return;
+  const d=brokerTimelineData;
+  const asset=document.getElementById('tradeTimelineAsset').value;
+  const kind=document.getElementById('tradeTimelineEvent').value;
+  const isFill=e=>['FILL','PARTIAL_FILL'].includes(e.event);
+  const rows=(d.events||[]).filter(e=>
+    (asset==='all'||e.asset_class===asset)&&
+    (kind==='all'||(kind==='fills'?isFill(e):!isFill(e)))
+  );
+  const summary=d.stats||{};
+  const renderEvent=e=>{
+    const state=isFill(e)?'positive':e.event==='REJECTED'||e.event==='FAILED'?'negative':'muted';
+    const qty=e.quantity==null?'—':Number(e.quantity).toLocaleString(undefined,{maximumFractionDigits:8});
+    const price=e.price==null?'—':money(e.price);
+    const side=e.side==='BUY'?'BUY':e.side==='SELL'?'SELL':String(e.side||'—');
+    const origin=e.origin==='AI_TRADER'?'AI Trader':'Unattributed';
+    return '<div class="timeline-entry">'+
+      '<div class="timeline-primary"><strong>'+esc(e.symbol||'Unknown')+'</strong> '+
+      '<span class="'+state+'">'+esc(e.event)+'</span>'+
+      '<span class="muted"> · '+esc(side)+' · '+esc(e.asset_class||'—')+'</span></div>'+
+      '<div class="timeline-date">'+brokerTime(e.timestamp)+'</div>'+
+      '<div class="timeline-details"><span>Qty: '+esc(qty)+'</span><span>Price: '+esc(price)+'</span>'+
+      '<span>Origin: '+esc(origin)+'</span>'+
+      '<span>Broker order: '+esc(String(e.order_id||'').slice(0,12))+'</span></div>'+
+      '</div>';
+  };
+  box.className='';
+  box.innerHTML='<div class="grid" style="margin-top:10px">'+
+    '<div class="card"><div class="label">Actual paper fills</div><div class="value">'+Number(summary.actual_fill_events||0)+'</div></div>'+
+    '<div class="card"><div class="label">Paper buys executed</div><div class="value">'+Number(summary.confirmed_buy_fill_events||0)+'</div></div>'+
+    '<div class="card"><div class="label">Paper sells executed</div><div class="value">'+Number(summary.confirmed_sell_fill_events||0)+'</div></div>'+
+    '</div>'+
+    '<div class="muted tiny" style="margin:9px 0">Last 90 days · '+rows.length+' matching visible events · latest recorded '+esc(d.generated_at||'')+'</div>'+
+    (d.order_history_may_be_truncated||d.fill_history_may_be_truncated?
+      '<div class="warning">Broker history reached its retrieval cap. Counts are based on retrieved activity only.</div>':'')+
+    (rows.length?'<div class="timeline-feed">'+rows.slice(0,130).map(renderEvent).join('')+'</div>':
+      '<div class="empty">No matching confirmed brokerage events in the retrieved window. AI predictions are not trades.</div>')+
+    '<div class="muted tiny" style="margin-top:12px">UNATTRIBUTED includes manual orders and broker-generated closes; it is not proof that a trade was manual. Partial fills are separate executions. Submitted orders may never fill. The timeline is paper-only.</div>';
+}
+async function loadTradeTimeline(){
+  const btn=document.getElementById('tradeTimelineRefresh');
+  const box=document.getElementById('tradeTimelineOut');
+  if(!box)return;
+  if(btn)btn.disabled=true;
+  box.className='empty';box.textContent='Reading real paper order history and execution timestamps…';
+  try{
+    const r=await apiFetch('/api/trade-timeline',{cache:'no-store'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||'Broker activity unavailable');
+    if(!Array.isArray(d.events))throw new Error('Broker timeline did not return events');
+    brokerTimelineData=d;brokerTimelineLoadedAt=Date.now();
+    renderTradeTimeline();
+  }catch(e){box.className='warning';box.textContent=String(e.message||e).slice(0,220)}
+  finally{if(btn)btn.disabled=false}
+}
+
 async function loadExecutionTruth(){
   const btn=document.getElementById('executionTruth'),box=document.getElementById('executionTruthOut');
   if(!box)return;
@@ -2643,6 +2740,9 @@ document.getElementById('cryptoChallengers').addEventListener('click',()=>compar
 document.getElementById('researchCycle').addEventListener('click',runContinuousResearch);
 document.getElementById('opsHealth').addEventListener('click',loadOpsHealth);
 document.getElementById('executionTruth').addEventListener('click',loadExecutionTruth);
+document.getElementById('tradeTimelineRefresh').addEventListener('click',loadTradeTimeline);
+document.getElementById('tradeTimelineAsset').addEventListener('change',renderTradeTimeline);
+document.getElementById('tradeTimelineEvent').addEventListener('change',renderTradeTimeline);
 document.getElementById('evidenceScoreboard').addEventListener('click',loadEvidenceScoreboard);
 document.getElementById('strategystats').addEventListener('click',loadStrategyStats);
 document.getElementById('memoryStatus').addEventListener('click',loadMemoryStatus);
