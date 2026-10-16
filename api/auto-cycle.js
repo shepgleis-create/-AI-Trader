@@ -82,9 +82,10 @@ async function latestExecutionSnapshot(symbol, key, secret) {
     headers: {
       'APCA-API-KEY-ID': key,
       'APCA-API-SECRET-KEY': secret
-    }
+    },
+    signal:AbortSignal.timeout(5000)
   });
-  const data = await r.json();
+  const data = await r.json().catch(()=>({}));
   if (!r.ok) return null;
 
   const s = data?.snapshots?.[symbol] || data?.[symbol];
@@ -760,10 +761,21 @@ async function handler(req, res) {
       }
     }
 
+    // Refresh final bid/ask BEFORE hard risk checks. Reject bad live quotes;
+    // do not rely on an old scanner snapshot when a newer verified quote exists.
+    let execution=null;
+    try{execution=await latestExecutionSnapshot(pick.symbol,key,secret)}
+    catch(e){actions.push({type:'execution_quote_warning',symbol:pick.symbol,
+      reason:'Fresh market quote fetch failed'})}
+    const riskCandidate=execution?.price>0&&execution?.spread_pct!=null&&
+      execution?.age_seconds!=null&&execution.age_seconds>=0&&execution.age_seconds<=300
+        ?{...pick,price:execution.price,bid:execution.bid,ask:execution.ask,
+          spread_pct:execution.spread_pct,data_age_seconds:execution.age_seconds}
+        :pick;
     const risk = evaluateEntry({
       account,
       positions,
-      candidate: pick,
+      candidate: riskCandidate,
       regime: scan.regime,
       eventContext: candidateContext[pick.symbol],
       confidence: decision.confidence,
@@ -797,7 +809,6 @@ async function handler(req, res) {
       });
     }
 
-    const execution = await latestExecutionSnapshot(pick.symbol, key, secret);
     if (!execution?.price) {
       const memory = await persistDecision('EXECUTION_DATA_REJECTED', { risk, execution });
       actions.push({ type: 'risk_reject', reason: 'Could not obtain a fresh execution snapshot' });
