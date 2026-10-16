@@ -53,6 +53,7 @@ The router is advisory. Each execution endpoint independently reloads live accou
 Crypto and options use app-managed risk monitors because Alpaca's crypto and options order paths do not use the same equity bracket workflow:
 - crypto risk monitor: every 15 minutes, 24/7
 - options risk monitor: every 15 minutes during the weekday U.S. market window
+- fractional equity position protection monitor: every 5 minutes during the weekday U.S. market window (paper only)
 
 The Alpaca crypto universe is scanned dynamically, but it is not a thousands-of-tokens venue. A broader provider adapter will be required before this system can research thousands of newly launched tokens.
 
@@ -111,7 +112,7 @@ Current calibration rules:
 - Sector-cluster concentration guard
 - Long-equity calibration entry cap: $25
 - Short calibration: easy-to-borrow only, whole-share only, one-share test, $100 price ceiling, bracket protected
-- Crypto calibration: $25 spot-long only, high pump-risk blocked, app-managed -5% / +10% / 72-hour exits
+- Crypto calibration: two independently selected $25 spot-long paper positions maximum (combined $50 momentum gross cap); high pump-risk blocked; 24-hour filled-entry / same-symbol controls; app-managed -5% / +10% / 72-hour exits
 - Options calibration: long calls/puts only, one contract, max $100 premium, app-managed -35% / +70% / 2-DTE exit
 - No naked option selling
 - No crypto leverage
@@ -145,17 +146,18 @@ Immediately before an entry, the selected symbol is rechecked on 15-minute data:
 
 The order is rejected if the daily setup is breaking down intraday.
 
-### Broker-side protection
-New autonomous paper entries are submitted as price-capped Alpaca limit bracket orders where supported:
-- limit entry capped slightly above the current ask/reference price
-- attached stop-loss
-- attached take-profit
-- stale unfilled autonomous entries are canceled after 20 minutes
+### Equity order execution and protection
+Alpaca does **not** accept fractional-share bracket orders. Prior paper entries were rejected for this reason.
+- Whole-share paper entries retain broker-native limit bracket stop and target protection.
+- Fractional-share paper entries use broker-compatible simple DAY limit orders, with a $25 paper cap.
+- A separate worker checks only positively matched bot-owned fractional positions every 5 minutes during trading hours, enforcing -3% loss / +6% gain checks and an end-of-day flatten rule.
+- Autonomous stock entry orders still expire if they remain unfilled; the stock cycle handles stale pending entries.
+- **A periodic app-managed stop is not a guaranteed broker-native stop**: gaps, outages and execution delays can result in larger losses. No live-money automation should rely on it without further work.
 
-This is important because Vercel Hobby scheduling is not suitable for second-by-second risk management.
+The Automation workspace's Execution Truth panel displays actual broker statuses separately from model decisions.
 
 ### Automation
-On Vercel Pro, the long-equity autonomous cycle runs every 15 minutes from 13:00–21:59 UTC on weekdays. The options risk monitor runs on the same weekday cadence, the crypto risk monitor runs every 15 minutes 24/7, and the Decision Memory outcome grader runs after the U.S. close on weekdays. The endpoint exits immediately when Alpaca reports the market closed, which covers both U.S. daylight-saving and standard-time market hours without maintaining two seasonal schedules.
+On Vercel Pro, the long-equity autonomous entry cycle runs every 15 minutes from 13:00–21:59 UTC on weekdays. The independent equity fractional protection monitor runs every 5 minutes with a 2-minute offset, within the same weekday UTC hours. The options risk monitor runs on the same weekday cadence, the crypto risk monitor runs every 15 minutes 24/7, and the Decision Memory outcome grader runs after the U.S. close on weekdays. The endpoint exits immediately when Alpaca reports the market closed, which covers both U.S. daylight-saving and standard-time market hours without maintaining two seasonal schedules.
 
 Each cycle:
 1. checks Alpaca account / market state
@@ -164,7 +166,7 @@ Each cycle:
 4. builds event context
 5. asks Gemini or uses quant fallback
 6. applies the hard risk gate
-7. plans or submits a bracket-protected paper order
+7. plans or submits a broker-supported paper order; fractional protection is separately app-managed
 
 Automatic execution remains disabled while:
 `AUTO_TRADING_ENABLED=false`
