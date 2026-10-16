@@ -232,6 +232,23 @@ async function handler(req,res){
       rejectionSummary[reason]=(rejectionSummary[reason]||0)+1;
 
     if(!possible.length){
+      // Preserve near-miss research hourly without spending AI tokens or placing an order.
+      // This allows reviewing why the strategy stayed out of the market.
+      if(new Date().getUTCMinutes()===0){
+        for(const item of evaluated.slice(0,3)){
+          const rejected={
+            approved:false,source:'QUANT_SCREEN',
+            rationale:'Scanner rejected setup: '+item.reasons.join(', '),
+            quantitative:{kind:'SCANNER_REVIEW',reasons:item.reasons,
+              metrics:{score:item.candidate.score,momentum_7d:item.candidate.momentum_7d,
+                momentum_30d:item.candidate.momentum_30d,
+                spread_pct:item.candidate.spread_pct,
+                volatility_14d:item.candidate.volatility_14d,
+                dollar_volume:item.candidate.dollar_volume}}
+          };
+          await recordTradeResearch({symbol:item.candidate.symbol,lane:'CRYPTO',review:rejected});
+        }
+      }
       actions.push({
         type:'crypto_no_setup',
         reason:'No eligible crypto setup; '+Object.entries(rejectionSummary).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([name,count])=>name+'='+count).join(', '),
