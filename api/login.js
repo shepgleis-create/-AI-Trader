@@ -14,7 +14,11 @@ export default async function handler(req,res){
     return res.status(401).json({error:'Dashboard secret did not match'});
   }
 
-  const session=createSession();
+  let session;
+  try{session=createSession()}
+  catch{return res.status(503).json({
+    error:'Private dashboard session signing is not configured. Set CRON_SECRET or DASHBOARD_SESSION_SECRET.'
+  })}
   setSessionCookie(res,session);
 
   return res.status(200).json({
