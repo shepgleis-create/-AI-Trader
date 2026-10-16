@@ -52,7 +52,11 @@ async function handler(req,res){
   const enabled=String(process.env.AUTO_TRADING_ENABLED||'').toLowerCase()==='true';
 
   if(!key||!secret)return res.status(500).json({error:'Missing Alpaca credentials'});
-  if(!base.includes('paper-api.alpaca.markets'))return res.status(403).json({error:'Paper-only build'});
+  try{
+    const target=new URL(base);
+    if(target.protocol!=='https:'||target.hostname!=='paper-api.alpaca.markets')
+      return res.status(403).json({error:'Paper-only build'});
+  }catch{return res.status(503).json({error:'Invalid paper brokerage URL'})}
 
   try{
     const historyUrl=new URL(`${base}/v2/account/portfolio/history`);
