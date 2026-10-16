@@ -12,7 +12,9 @@ test('stock automation submits validated broker-compatible order payload',()=>{
 });
 
 test('paper stock bot exit controls never liquidate unrelated manual holdings',()=>{
-  assert.match(auto,/if \(!autonomousSymbols\.has\(p\.symbol\)\|\|protectedSymbols\.has\(p\.symbol\)\) continue/);
+  assert.match(auto,/identifyBotOwnedEquityPosition\(p,recentOrders\)/);
+  assert.match(auto,/if\(!owner\.managed\|\|protectedSymbols\.has\(p\.symbol\)\) continue/);
+  assert.match(auto,/identifyBotFractionalPosition\(p,recentOrders\)/);
 });
 
 test('market data is refreshed before risk evaluation and reused at execution',()=>{
