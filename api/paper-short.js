@@ -31,7 +31,11 @@ export default async function handler(req,res){
   const secret=process.env.ALPACA_SECRET_KEY;
   const base=process.env.ALPACA_BASE_URL||'https://paper-api.alpaca.markets';
   if(!key||!secret)return res.status(500).json({error:'Missing Alpaca credentials'});
-  if(!base.includes('paper-api.alpaca.markets'))return res.status(403).json({error:'Paper-only build'});
+  try{
+    const broker=new URL(base);
+    if(broker.protocol!=='https:'||broker.hostname!=='paper-api.alpaca.markets')
+      return res.status(403).json({error:'Paper-only build'});
+  }catch{return res.status(503).json({error:'Invalid paper brokerage URL'})}
 
   const symbol=String(req.body?.symbol||'').trim().toUpperCase();
   if(!/^[A-Z.]{1,12}$/.test(symbol))return res.status(400).json({error:'Valid symbol required'});
