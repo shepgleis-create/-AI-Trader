@@ -2,6 +2,16 @@
 
 Autonomous **paper-trading** research system using Alpaca market/trading APIs, Gemini for a constrained decision layer, and deterministic risk controls.
 
+## Latest execution, research and trade-history upgrades
+
+- **Broker-confirmed trade timeline:** The History workspace now shows dated stock, crypto and options order submissions and actual Alpaca fill activity. Fill timestamps come from Alpaca `transaction_time`, not model predictions. Local device time and UTC are both displayed. Partial fills and order rejections are separate events.
+- **AI Research Journal:** Crypto buy candidates receive independent numerical market-quality checks; eligible candidates also receive a bounded Gemini research review when a model is available. An AI veto cannot override an unsafe quote, and unavailable AI is explicitly labeled as quantitative fallback. Each reviewed setup can be linked to its paper order in Neon.
+- **Crypto near-miss research:** When no entry qualifies, the scanner logs the top rejected setups to research memory hourly so users can see the reasons without generating costly AI requests for all 15-minute scans.
+- **Options paper entry review:** Existing manually initiated long calls/puts now pass extra contract quality and optional Gemini risk review before order submission. **Options entries and the advisory multi-asset AI router are NOT yet fully autonomous.** The scheduled options worker currently manages risk and exits only.
+- **Protective exit priority:** Urgent stop/target/time exits do not wait for external AI requests. A periodic risk monitor is not a guaranteed broker-native stop.
+- **Automated entry capabilities:** Stocks and spot crypto have scheduled autonomous paper entry workers. They may correctly skip markets where no setup passes the policy. A higher trading frequency is not evidence of an edge.
+- **Real-money limit:** All automated order code remains restricted to Alpaca paper brokerage. No live-money mode was enabled, and no claim of learned profitability is made.
+
 ## What it does now
 
 ### Dashboard security
