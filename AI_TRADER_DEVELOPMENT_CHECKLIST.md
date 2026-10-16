@@ -17,6 +17,10 @@ Status language:
 - [x] Existing stock/options/crypto entry routes and operational journal
 
 ## Current development batch
+- [x] Cost-aware shortlist ranking added to stock autonomous execution, prioritizing spread, freshness, relative strength, liquidity and modest historical evidence
+- [x] Gemini receives transparent opportunity-rank notes; it remains advisory and cannot bypass risk gates
+- [x] Regime-adjusted scanner threshold and existing held/open-order/cooldown filters preserved in revised ranking
+- [x] Opportunity ranking unit tests and source-wire checks executed in isolated JS harness (8 checks passed)
 - [x] Equity broker order policy: fractional simple DAY limit / whole-share broker brackets
 - [x] App-managed paper fractional-equity monitor with strict autonomous-fill ownership matching
 - [x] Stop -3%, target +6%, and close-window exit rules with 5-minute weekday monitoring
@@ -48,7 +52,7 @@ Status language:
 6. **P1 — Automated failure response:** Display a persistent warning if scheduled workers fail repeatedly or if broker rejects consecutive orders; optionally require operator review.
 7. **P1 — Crypto quality:** Research cost-adjusted forward results and rejection distributions before expanding beyond the 2 x $25 paper caps.
 8. **P2 — Dashboard:** Add sortable order journal, chronological fills, execution-price differences, filterable errors and responsive mobile review.
-9. **P2 — Strategy validation:** Prospective per-strategy tracking, regime-aware evaluation, chronological walk-forward validation, calibrated costs and paper-vs-benchmark evidence.
+9. **P2 — Strategy validation:** Validate newly introduced cost-aware shortlist rank in shadow mode against prospective fills/outcomes; do not assume it improves returns. Extend per-strategy tracking, regime-aware evaluation, chronological walk-forward validation, calibrated costs and benchmark evidence.
 10. **P2 — Documentation:** Keep README broker restrictions and current autonomous behavior synchronized with implementation.
 
 ## Verification notes
