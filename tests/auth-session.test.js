@@ -13,7 +13,8 @@ test('dashboard cookie signatures require a private key not a checked-in verifie
   process.env.CRON_SECRET='unit-testing-private-secret-123';
   const issued=createSession();
   assert.equal(validateSession(issued),true);
-  assert.equal(validateSession(issued.replace(/.$/,'0')),false);
+  const corrupted=issued.slice(0,-1)+(issued.endsWith('0')?'1':'0');
+  assert.equal(validateSession(corrupted),false);
  }finally{
   if(oldCron===undefined)delete process.env.CRON_SECRET;else process.env.CRON_SECRET=oldCron;
   if(oldDashboard===undefined)delete process.env.DASHBOARD_SESSION_SECRET;
