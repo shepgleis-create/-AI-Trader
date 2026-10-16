@@ -612,7 +612,7 @@ body{padding:0;overflow-x:hidden}
       <div class="kv"><span class="muted">Calibration entry cap</span><strong>$25</strong></div>
       <div class="kv"><span class="muted">Autonomous entries/day</span><strong>1</strong></div>
       <div class="kv"><span class="muted">Same-symbol cooldown</span><strong>5 days</strong></div>
-      <div class="kv"><span class="muted">Long entry protection</span><strong>Broker-side bracket stop + target</strong></div>
+      <div class="kv"><span class="muted">Long entry protection</span><strong>Whole shares: broker bracket · Fractional: 5m app monitor</strong></div>
       <div class="kv"><span class="muted">Short calibration</span><strong>ETB only · whole-share · $100 ceiling · bracket protected</strong></div>
       <div class="kv"><span class="muted">Crypto calibration</span><strong>$25 spot-long · high pump-risk blocked · app-managed −5% / +10%</strong></div>
       <div class="kv"><span class="muted">Options calibration</span><strong>Long calls/puts only · 1 contract · max $100 premium · app-managed −35% / +70%</strong></div>
@@ -1006,7 +1006,7 @@ async function load(){
     if(!d.positions.length){box.className='empty';box.textContent='No open paper positions yet.'}
     else{
       box.className='';box.innerHTML='<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Value</th><th>P/L</th><th>Protection</th></tr></thead><tbody>'+
-      d.positions.map(p=>'<tr><td><strong>'+esc(p.symbol)+'</strong></td><td>'+((Number(p.qty)<0)?'<span class="negative">SHORT</span>':'<span class="positive">LONG</span>')+'</td><td>'+p.qty+'</td><td>'+money(p.market_value)+'</td><td class="'+(p.unrealized_pl>=0?'positive':'negative')+'">'+money(p.unrealized_pl)+' ('+pct(p.unrealized_plpc)+')</td><td>'+(p.broker_protected?'<span class="positive">BRACKET</span>':'<span class="warning">LEGACY</span>')+'</td></tr>').join('')+
+      d.positions.map(p=>'<tr><td><strong>'+esc(p.symbol)+'</strong></td><td>'+((Number(p.qty)<0)?'<span class="negative">SHORT</span>':'<span class="positive">LONG</span>')+'</td><td>'+p.qty+'</td><td>'+money(p.market_value)+'</td><td class="'+(p.unrealized_pl>=0?'positive':'negative')+'">'+money(p.unrealized_pl)+' ('+pct(p.unrealized_plpc)+')</td><td>'+(p.broker_protected?'<span class="positive">BRACKET</span>':'<span class="warning">APP / UNVERIFIED</span>')+'</td></tr>').join('')+
       '</tbody></table></div>';
     }
     updatePaperButton();
@@ -1203,7 +1203,7 @@ async function runCryptoScan(){
     box.innerHTML=
       '<div class="'+(automationIsEnabled?'positive':'warning')+' tiny">'+
         (automationIsEnabled
-          ?'Autonomous PAPER crypto entries ON · one crypto position max · one entry attempt per 24h. '
+          ?'Autonomous PAPER crypto entries ON · max two distinct $25 positions · $50 momentum gross cap · max two filled entries / 24h. '
           :'Autonomous PAPER crypto entries OFF · scanner + manual paper tests only. ')+
         'Universe '+Number(d.universe_size||0)+' · deep analyzed '+Number(d.deeply_analyzed||0)+' · high pump-risk '+Number(d.high_pump_risk||0)+'</div>'+
       '<div class="tablewrap"><table><thead><tr><th>Pair</th><th>Score</th><th>Signal</th><th>Pump Risk</th><th>Day</th><th>7D</th><th>30D</th><th>RSI</th><th>Vol</th><th>Spread</th></tr></thead><tbody>'+
