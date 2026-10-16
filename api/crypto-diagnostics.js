@@ -1,6 +1,7 @@
 import {requireDashboardAuth} from '../lib/auth.js';
 import {getDatabaseUrl} from '../lib/database-url.js';
-import {isStablecoinCrypto,normalizeCryptoSymbol} from '../lib/crypto-eligibility.js';
+import {isStablecoinCrypto} from '../lib/crypto-eligibility.js';
+import {cryptoEntryCapacity,CRYPTO_PAPER_POLICY} from '../lib/crypto-allocation.js';
 import pg from 'pg';
 
 export default async function handler(req,res){
@@ -12,8 +13,8 @@ export default async function handler(req,res){
     return res.status(503).json({error:'Paper brokerage is not configured'});
   const headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret};
   const results=await Promise.allSettled([
-    fetch(base+'/v2/positions',{headers}),
-    fetch(base+'/v2/orders?status=all&limit=100&direction=desc',{headers})
+    fetch(base+'/v2/positions',{headers,signal:AbortSignal.timeout(6500)}),
+    fetch(base+'/v2/orders?status=all&limit=100&direction=desc',{headers,signal:AbortSignal.timeout(6500)})
   ]);
   if(results.some(r=>r.status==='rejected'||!r.value.ok))
     return res.status(502).json({error:'Unable to retrieve current paper positions or order history'});
@@ -27,6 +28,8 @@ export default async function handler(req,res){
   const botEntries=cryptoOrders.filter(o=>o.side==='buy');
   const now=Date.now(),dayMs=86400000;
   const recentEntries=botEntries.filter(o=>now-new Date(o.submitted_at||0).getTime()<dayMs);
+  const filledEntries=botEntries.filter(o=>Number(o.filled_qty||0)>0);
+  const capacity=cryptoEntryCapacity({positions,recentFilled:filledEntries,now});
   const url=getDatabaseUrl();
   let recentCycles=[],auditError=null;
   if(url){
@@ -44,12 +47,17 @@ export default async function handler(req,res){
     positions:{
       stablecoins:stablecoinPositions.map(p=>({symbol:p.symbol,market_value:Number(p.market_value||0),unrealized_pl:Number(p.unrealized_pl||0)})),
       momentum:momentumPositions.map(p=>({symbol:p.symbol,market_value:Number(p.market_value||0),unrealized_pl:Number(p.unrealized_pl||0)})),
-      momentum_slots_available:Math.max(0,1-momentumPositions.length)
+      momentum_slots_available:capacity.available_slots,
+      capacity_locks:capacity.reasons,
+      momentum_gross_notional:capacity.gross_notional,
+      max_momentum_gross_notional:CRYPTO_PAPER_POLICY.maxMomentumGrossNotional
     },
     bot_orders:{
       scanned_recent_count:cryptoOrders.length,
       entry_orders_seen:botEntries.length,
       entry_attempts_last_24h:recentEntries.length,
+      filled_buy_entries_in_recent_order_page:filledEntries.length,
+      fills_last_24h:capacity.fills_last_24h,
       latest_entries:botEntries.slice(0,8).map(o=>({
         symbol:o.symbol,status:o.status,filled_qty:o.filled_qty||'0',
         submitted_at:o.submitted_at||null,filled_at:o.filled_at||null,
@@ -58,6 +66,6 @@ export default async function handler(req,res){
     },
     recent_cycles:recentCycles,
     audit_warning:auditError,
-    notice:'Stablecoins are excluded from new momentum entries. Existing stablecoins are never silently liquidated. Unrealized figures are not realized profits. Order history is limited to the latest 100 orders.'
+    notice:'Paper strategy has two momentum slots and a $50 combined gross notional cap. Stablecoins are excluded from new momentum entries. Existing stablecoins are never silently liquidated. Unrealized figures are not realized profits. Order history is limited to the latest 100 orders.'
   });
 }
