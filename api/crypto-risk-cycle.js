@@ -8,6 +8,7 @@ import {cryptoEntryCapacity,hasRecentSameSymbolFill,CRYPTO_PAPER_POLICY} from '.
 import {rankedCryptoSetups,inspectCryptoQuote,planCryptoLimitBuy} from '../lib/crypto-execution.js';
 import {researchCryptoEntry} from '../lib/crypto-decision-research.js';
 import {recordTradeResearch,updateTradeResearchOrder} from '../lib/pretrade-research-memory.js';
+import {identifyBotCryptoPosition,cryptoHasPendingExit} from '../lib/crypto-position-ownership.js';
 
 const STOP=-0.05;
 const TARGET=0.10;
@@ -76,15 +77,20 @@ async function handler(req,res){
     const recent=Array.isArray(rp.d)?rp.d:[];
     const actions=[];
 
-    // App-managed protection applies to both manual and autonomous paper crypto.
+    // Protect positively matched bot-owned positions only. A past bot fill does
+    // not confer ownership after a user manually changes or closes/reopens a holding.
     const cryptoParents=recent.filter(o=>o?.side==='buy'&&String(o?.client_order_id||'').startsWith('aitr-c-'));
     for(const p of positions){
       if(!isCryptoPosition(p))continue;
-      const parent=cryptoParents.find(o=>normalizeCryptoSymbol(o.symbol)===normalizeCryptoSymbol(p.symbol)&&Number(o.filled_qty||0)>0);
-      if(!parent)continue;
+      const parent=identifyBotCryptoPosition(p,recent);
+      if(!parent.managed){
+        if(parent.reason==='crypto_quantity_changed_since_bot_buy')
+          actions.push({type:'crypto_ownership_warning',symbol:p.symbol,reason:parent.reason});
+        continue;
+      }
 
       const plpc=Number(p.unrealized_plpc||0);
-      const submitted=new Date(parent.filled_at||parent.submitted_at||0).getTime();
+      const submitted=new Date(parent.filled_at||0).getTime();
       const ageHours=submitted>0?(Date.now()-submitted)/3600000:0;
       let reason=null;
       if(isStablecoinCrypto(p.symbol)&&isAutoCryptoId(parent.client_order_id)&&ageHours>=6)
@@ -93,10 +99,14 @@ async function handler(req,res){
       else if(plpc>=TARGET)reason='crypto_app_target';
       else if(ageHours>=MAX_HOURS)reason='crypto_time_exit';
       if(!reason)continue;
+      if(cryptoHasPendingExit(p.symbol,openOrders)){
+        actions.push({type:'crypto_exit_deferred',symbol:p.symbol,
+          reason:'existing_sell_order_pending'});
+        continue;
+      }
 
       const close=await jf(`${base}/v2/positions/${encodeURIComponent(p.symbol)}`,{
-        method:'DELETE',
-        headers:h(key,secret)
+        method:'DELETE',headers:h(key,secret),signal:AbortSignal.timeout(7000)
       });
       actions.push({
         type:'exit',
