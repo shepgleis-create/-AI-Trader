@@ -26,7 +26,10 @@ Status language:
 - [x] Hourly archived crypto scanner near misses, instead of burning AI requests on every 15-minute no-setup cycle
 - [x] Neon pretrade_research_audit table created via idempotent migration and schema verified
 - [x] AI Research Journal API and Automation UI linked to actual saved research and order IDs
-- [x] Paper broker URL host validation strengthened for crypto and options routes
+- [x] Exact HTTPS Alpaca paper host validation strengthened across stock, crypto, options and paper short routes
+- [x] Dashboard session signing no longer falls back to the public repository login verifier
+- [x] Login returns configuration error if server has no private HMAC signing key (CRON_SECRET or DASHBOARD_SESSION_SECRET)
+- [x] Authentication security regression test added (full Node execution still requires CI verification)
 - [x] 36 isolated JavaScript regression tests passed across 9 groups (not equivalent to full GitHub Actions CI)
 - [ ] Broker fill history tested against live authenticated Alpaca production paper response
 - [ ] New crypto Gemini review exercised with genuine qualifying production setup
