@@ -11,6 +11,7 @@ import { candidateReadiness } from '../lib/readiness.js';
 import { newDecisionCycleId, saveDecisionMemory } from '../lib/decision-memory.js';
 import { fetchMarketClock } from '../lib/alpaca-clock.js';
 import { buildEquityEntryOrder } from '../lib/equity-order-policy.js';
+import {rankEquityShortlist} from '../lib/opportunity-ranking.js';
 import {identifyBotOwnedEquityPosition,identifyBotFractionalPosition} from '../lib/equity-protection.js';
 
 const LEGACY_STOP_LOSS = -0.03;
@@ -564,14 +565,18 @@ async function handler(req, res) {
     const held = new Set(positions.map(p => p.symbol));
     const ordered = new Set(openOrders.map(o => o.symbol));
 
-    const eligible = scan.candidates
-      .filter(c =>
-        c.score >= Math.max(68, entryThreshold - 10) &&
-        !held.has(c.symbol) &&
-        !ordered.has(c.symbol) &&
-        !recentlyTradedSymbols.has(c.symbol)
-      )
-      .slice(0, 5);
+    const eligible=rankEquityShortlist(scan.candidates,{
+      entryThreshold,held,ordered,recentlyTradedSymbols,limit:5
+    });
+    actions.push({
+      type:'execution_aware_shortlist',
+      candidates:eligible.map(c=>({
+        symbol:c.symbol,
+        scanner_score:c.score,
+        rank_score:c.opportunity_quality.rank_score,
+        notes:c.opportunity_quality.execution_quality_notes
+      }))
+    });
 
     if (!eligible.length) {
       const observed = scan.candidates.slice(0, 5);
@@ -656,13 +661,13 @@ async function handler(req, res) {
     }
 
     if (!decision) {
-      const best = eligible[0];
+      const best = eligible.find(c=>c.score >= entryThreshold);
       decision = best && best.score >= entryThreshold
         ? {
             action: 'BUY',
             symbol: best.symbol,
-            confidence: Math.min(95, Math.max(60, best.score)),
-            rationale: 'Gemini unavailable; quantitative fallback selected the highest-scoring candidate above the regime-adjusted threshold.'
+            confidence: Math.min(85, Math.max(60, best.opportunity_quality.rank_score)),
+            rationale: 'Gemini unavailable; quantitative fallback selected a regime-qualified setup prioritized by observed spread, quote freshness, relative strength and historical analog quality. This ranking is not a profit probability.'
           }
         : {
             action: 'SKIP',
