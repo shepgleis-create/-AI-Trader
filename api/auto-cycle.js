@@ -11,6 +11,7 @@ import { candidateReadiness } from '../lib/readiness.js';
 import { newDecisionCycleId, saveDecisionMemory } from '../lib/decision-memory.js';
 import { fetchMarketClock } from '../lib/alpaca-clock.js';
 import { buildEquityEntryOrder } from '../lib/equity-order-policy.js';
+import {identifyBotOwnedEquityPosition,identifyBotFractionalPosition} from '../lib/equity-protection.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
@@ -289,11 +290,9 @@ async function handler(req, res) {
     }
 
     // Only manage positions opened by this bot; never liquidate unrelated manual holdings.
-    const autonomousSymbols=new Set(autonomousParents
-      .filter(o=>Number(o.filled_qty||0)>0)
-      .map(o=>o.symbol).filter(Boolean));
     for (const p of positions) {
-      if (!autonomousSymbols.has(p.symbol)||protectedSymbols.has(p.symbol)) continue;
+      const owner=identifyBotOwnedEquityPosition(p,recentOrders);
+      if(!owner.managed||protectedSymbols.has(p.symbol)) continue;
       const plpc = Number(p.unrealized_plpc || 0);
       if (plpc <= LEGACY_STOP_LOSS || plpc >= LEGACY_TAKE_PROFIT) {
         const reason = plpc <= LEGACY_STOP_LOSS ? 'legacy_stop_loss' : 'legacy_take_profit';
@@ -389,10 +388,11 @@ async function handler(req, res) {
     }
 
     if (entryWindow.phase === 'CLOSING_NOISE') {
-      const autonomousSymbols = new Set(autonomousParents.map(o => o.symbol).filter(Boolean));
-
       for (const p of positions) {
-        if (!autonomousSymbols.has(p.symbol)) continue;
+        // Only bot-owned fractional simple DAY entries need forced flattening.
+        // Broker-native whole-share brackets remain in place; manual holdings are untouched.
+        const owner=identifyBotFractionalPosition(p,recentOrders);
+        if(!owner.managed)continue;
 
         if (!enabled) {
           actions.push({
