@@ -11,6 +11,10 @@
       "schedule": "*/15 13-21 * * 1-5"
     },
     {
+      "path": "/api/equity-risk-cycle",
+      "schedule": "2-57/5 13-21 * * 1-5"
+    },
+    {
       "path": "/api/options-risk-cycle",
       "schedule": "*/15 13-21 * * 1-5"
     },
