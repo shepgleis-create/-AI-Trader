@@ -10,6 +10,7 @@ import { getIntradayConfirmation } from '../lib/intraday.js';
 import { candidateReadiness } from '../lib/readiness.js';
 import { newDecisionCycleId, saveDecisionMemory } from '../lib/decision-memory.js';
 import { fetchMarketClock } from '../lib/alpaca-clock.js';
+import { buildEquityEntryOrder } from '../lib/equity-order-policy.js';
 
 const LEGACY_STOP_LOSS = -0.03;
 const LEGACY_TAKE_PROFIT = 0.06;
@@ -286,8 +287,12 @@ async function handler(req, res) {
       }
     }
 
+    // Only manage positions opened by this bot; never liquidate unrelated manual holdings.
+    const autonomousSymbols=new Set(autonomousParents
+      .filter(o=>Number(o.filled_qty||0)>0)
+      .map(o=>o.symbol).filter(Boolean));
     for (const p of positions) {
-      if (protectedSymbols.has(p.symbol)) continue;
+      if (!autonomousSymbols.has(p.symbol)||protectedSymbols.has(p.symbol)) continue;
       const plpc = Number(p.unrealized_plpc || 0);
       if (plpc <= LEGACY_STOP_LOSS || plpc >= LEGACY_TAKE_PROFIT) {
         const reason = plpc <= LEGACY_STOP_LOSS ? 'legacy_stop_loss' : 'legacy_take_profit';
@@ -864,6 +869,17 @@ async function handler(req, res) {
     const refCents = Math.max(1, Math.round(px * 100));
     const clientId = `aitr-${source === 'LLM' ? 'g' : 'q'}-${pick.symbol.toLowerCase()}-s${pick.score}-c${Math.round(decision.confidence)}-p${refCents}-${String(Date.now()).slice(-7)}`.slice(0,48);
 
+    const policy=buildEquityEntryOrder({
+      symbol:pick.symbol,qty,limitPrice:entryLimitPrice,
+      stopPrice,takeProfitPrice,clientOrderId:clientId
+    });
+    if(!policy.ok){
+      actions.push({type:'risk_reject',symbol:pick.symbol,reason:policy.reason});
+      const memory=await persistDecision('SIZING_REJECTED',{risk,intraday,execution,
+        meta:{rejection_reason:policy.reason}});
+      return res.status(200).json({ok:true,mode:'PAPER',enabled,memory,actions});
+    }
+
     const planned = {
       type: enabled ? 'entry' : 'entry_dry_run',
       decision_source: source,
@@ -874,7 +890,9 @@ async function handler(req, res) {
       qty,
       reference_price: px,
       entry_limit_price: Number(entryLimitPrice),
-      execution_policy: 'PRICE_CAPPED_LIMIT_BRACKET',
+      execution_policy: policy.protection,
+      fractional_order:policy.fractional,
+      protective_order_warning:policy.warning,
       execution_spread_pct: execution.spread_pct,
       execution_quote_age_seconds: execution.age_seconds,
       intraday_confirmation: intraday,
@@ -894,22 +912,11 @@ async function handler(req, res) {
       const orderRes = await fetch(`${baseUrl}/v2/orders`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          symbol: pick.symbol,
-          qty: qty.toString(),
-          side: 'buy',
-          type: 'limit',
-          limit_price: entryLimitPrice,
-          time_in_force: 'day',
-          order_class: 'bracket',
-          take_profit: { limit_price: takeProfitPrice },
-          stop_loss: { stop_price: stopPrice },
-          client_order_id: clientId
-        })
+        body: JSON.stringify(policy.order)
       });
       const order = await orderRes.json();
 
-      logTraderEvent('entry_submit', { ...planned, submitted: orderRes.ok, order_id: order?.id || null, status: order?.status || null, error: orderRes.ok ? null : order?.message || 'Bracket order rejected' });
+      logTraderEvent('entry_submit', { ...planned, submitted: orderRes.ok, order_id: order?.id || null, status: order?.status || null, error: orderRes.ok ? null : order?.message || 'Stock entry order rejected' });
       const submittedAction = {
         ...planned,
         submitted: orderRes.ok,
