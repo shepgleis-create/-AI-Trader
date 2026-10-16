@@ -3,6 +3,7 @@ import { recentCronRuns, scheduledJobs, cronDatabaseConfig } from '../lib/cron-t
 
 const SCHEDULES={
   'auto-cycle':{kind:'weekday',minutes:15},
+  'equity-risk-cycle':{kind:'weekday',minutes:5},
   'crypto-risk-cycle':{kind:'continuous',minutes:15},
   'options-risk-cycle':{kind:'weekday',minutes:15},
   'outcome-cycle':{kind:'weekday_daily',minutes:1440},
@@ -20,7 +21,7 @@ function expectedNow(job,now){
   if(job==='forward-grade-cycle')return hour===22 && minute>=45;
   if(job==='shadow-router-cycle')return (hour===15||hour===17||hour===19)&&minute>=5;
   if(job==='multi-asset-outcome-cycle')return hour>=14&&hour<=22&&minute>=35;
-  if(job==='options-risk-cycle'||job==='auto-cycle')return hour>=13&&hour<=21;
+  if(job==='options-risk-cycle'||job==='auto-cycle'||job==='equity-risk-cycle')return hour>=13&&hour<=21;
   return hour>=13&&hour<=22;
 }
 export function evaluateJobHealth(job,rows,now){
@@ -29,7 +30,7 @@ export function evaluateJobHealth(job,rows,now){
   const relevant=rows.filter(r=>r.job===job);
   const active=expectedNow(job,now);
   const age=recent?Math.max(0,(now-new Date(recent.started_at))/60000):null;
-  const threshold=job==='crypto-risk-cycle'?50:job==='research-cycle'?90:(job==='outcome-cycle'||job==='forward-grade-cycle')?1800:job==='shadow-router-cycle'?195:settings.minutes===60?150:90;
+  const threshold=job==='crypto-risk-cycle'?50:job==='research-cycle'?90:(job==='outcome-cycle'||job==='forward-grade-cycle')?1800:job==='shadow-router-cycle'?195:settings.minutes===60?150:settings.minutes===5?25:90;
   const failureCount=relevant.filter(r=>r.status==='ERROR'||r.status==='TIMEOUT').length;
   const unconfirmedAudits=relevant.filter(r=>r.status==='AUDIT_UNCONFIRMED').length;
   const state=recent?.status==='RUNNING'&&age>5?'STALLED':
