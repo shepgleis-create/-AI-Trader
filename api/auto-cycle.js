@@ -128,9 +128,11 @@ async function handler(req, res) {
   if (!cronAuthorized && !dashboardAuthorized) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!baseUrl.includes('paper-api.alpaca.markets')) {
-    return res.status(403).json({ error: 'Live endpoint rejected. Automation is paper-only.' });
-  }
+  try{
+    const broker=new URL(baseUrl);
+    if(broker.protocol!=='https:'||broker.hostname!=='paper-api.alpaca.markets')
+      return res.status(403).json({error:'Live endpoint rejected. Automation is paper-only.'});
+  }catch{return res.status(503).json({error:'Invalid paper brokerage URL'})}
 
   const headers = {
     'APCA-API-KEY-ID': key,
