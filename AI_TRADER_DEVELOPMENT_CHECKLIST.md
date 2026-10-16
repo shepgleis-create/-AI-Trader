@@ -1,5 +1,5 @@
 # AI Trader — Development checklist
-Updated: 2026-10-15
+Updated: 2026-10-16
 Target: existing `shepgleis-create/-AI-Trader` repository and `ai-trader` Vercel project.
 
 Status language:
@@ -15,6 +15,24 @@ Status language:
 - [x] Neon Decision Memory, scheduled outcome grading, research statistics
 - [x] Existing responsive dark dashboard and multi-page navigation
 - [x] Existing stock/options/crypto entry routes and operational journal
+
+## Latest expansion — 2026-10-16
+- [x] Broker fill history API: all paper asset classes, execution timestamps, partial fills, submission and rejection events
+- [x] History UI: mobile-friendly sortable-by-time feed with asset and event filters, local timezone and UTC
+- [x] Broker origin shown honestly as AI_TRADER or UNATTRIBUTED; auto-generated closes may not carry bot IDs
+- [x] Crypto pretrade numerical market-quality review and optional bounded Gemini veto, with quant fallback explicitly labeled
+- [x] Manual long call/put paper route: option quality, IV, spread, DTE and premium research plus optional Gemini veto
+- [x] Crypto risk exit protection checks exact latest bot fill and ignores manually changed lots; duplicate sell detection added
+- [x] Hourly archived crypto scanner near misses, instead of burning AI requests on every 15-minute no-setup cycle
+- [x] Neon pretrade_research_audit table created via idempotent migration and schema verified
+- [x] AI Research Journal API and Automation UI linked to actual saved research and order IDs
+- [x] Paper broker URL host validation strengthened for crypto and options routes
+- [x] 36 isolated JavaScript regression tests passed across 9 groups (not equivalent to full GitHub Actions CI)
+- [ ] Broker fill history tested against live authenticated Alpaca production paper response
+- [ ] New crypto Gemini review exercised with genuine qualifying production setup
+- [ ] Full GitHub Actions job result verified
+- [ ] Automatic options paper ENTRY worker (scheduled monitor currently only automates options exit management)
+- [ ] Prospective model calibration/online learning with measured net outcomes; no claim of retrained neural networks
 
 ## Current development batch
 - [x] Cost-aware shortlist ranking added to stock autonomous execution, prioritizing spread, freshness, relative strength, liquidity and modest historical evidence
@@ -42,6 +60,14 @@ Status language:
 - [ ] Verify actual 5-minute fractional protection worker run next stock market session
 - [ ] Verify actual second eligible crypto position with total notional <= $50
 - [ ] Browser-based screenshot and mobile touch testing (not available in present tools)
+
+## Additional development priorities
+1. Measure actual broker fills and spread/fee-adjusted closed P/L before any risk scaling.
+2. Validate the new hourly crypto-rejection evidence and compare candidate opportunity forecasts against later price movement before widening the tradeable strategy set.
+3. Implement independently verified autonomous paper options CALL and PUT entries from the shadow router, preserving the $100 contract premium and hard risk gates.
+4. Build an auditable strategy promotion system that requires forward out-of-sample data and cannot change production trading controls automatically on a tiny sample.
+5. Verify first real broker transaction records and mobile usability of the trade timeline.
+6. Do not switch to live-money execution until broker integration tests, loss controls, performance evidence and user-approved risk limits have been established.
 
 ## Known technical debt and follow-ups (priority order)
 1. **P0 — Order acceptance:** Confirm Alpaca allows exact paper fractional `simple` DAY limit payload and verify filled status, no longer merely submitted.
