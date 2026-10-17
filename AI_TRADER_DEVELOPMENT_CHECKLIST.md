@@ -16,6 +16,25 @@ Status language:
 - [x] Existing responsive dark dashboard and multi-page navigation
 - [x] Existing stock/options/crypto entry routes and operational journal
 
+## October 16 follow-up — broker reliability and real-trade evidence
+- [x] Diagnosed one actual EWZ fractional paper buy submitted at 2026-10-16T14:15:20Z and recorded as pending_new, not a verified fill
+- [x] Diagnosed unfilled stock BUY submissions consuming daily entry quota
+- [x] New quota distinguishes filled autonomous buys, canceled/rejected attempts and outstanding orders; pending risk blocks duplicates
+- [x] Added equity-entry-quota regression tests (4 isolated cases passed)
+- [x] Diagnosed 108 equity-risk-cycle HTTP 404 failures in production
+- [x] Fractional monitor now uses shared Alpaca market clock with calendar fallback and endpoint-specific failure reporting
+- [x] Added mock v2-clock-404 fallback regression test to source; GitHub Actions result not yet available
+- [x] Diagnosed crypto research vetoes driven by tiny current UTC-day snapshot dollar-volume readings
+- [x] Crypto scanner now uses median dollar volume of the last seven completed daily bars, requiring at least three days
+- [x] Added crypto-liquidity regression tests (3 isolated cases passed)
+- [x] New Overview trading-reality card integrates broker fill timeline with critical scheduler status
+- [x] Dashboard script syntax validated in isolated JavaScript runtime
+- [ ] Verify first subsequent equity-risk-cycle as COMPLETED in production during a stock market session
+- [ ] Verify new crypto completed-bar liquidity diagnostics actually produce qualified candidates
+- [ ] Verify post-fix orders are accepted and genuinely filled by Alpaca
+- [ ] Full GitHub Actions CI run verified; workflow discovery returned no run for latest checked revision
+- [ ] Browser/mobile UI screenshot verification performed
+
 ## Latest expansion — 2026-10-16
 - [x] Broker fill history API: all paper asset classes, execution timestamps, partial fills, submission and rejection events
 - [x] History UI: mobile-friendly sortable-by-time feed with asset and event filters, local timezone and UTC
