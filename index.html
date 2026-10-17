@@ -319,7 +319,14 @@ body{padding:0;overflow-x:hidden}
       </div>
 
       <section id="pageHost">
-        <section class="page-view active" data-view="overview"><div class="page-grid" id="page-overview-grid"></div></section>
+        <section class="page-view active" data-view="overview"><div class="page-grid" id="page-overview-grid">
+          <div class="card wide" id="autoReadinessCard">
+            <div class="label">Autonomous Trading · Reality Check</div>
+            <p class="muted">Live paper-broker execution records and actual scheduled-worker outcomes. A successful scan or order request is not a filled trade.</p>
+            <button id="autoReadinessRefresh" type="button">Refresh Real Trading Status</button>
+            <div id="autoReadinessOut" class="empty" aria-live="polite">Checking trading execution and worker health…</div>
+          </div>
+        </div></section>
         <section class="page-view" data-view="portfolio"><div class="page-grid" id="page-portfolio-grid"></div></section>
         <section class="page-view" data-view="markets-long"><div class="page-grid" id="page-markets-long-grid"></div></section>
         <section class="page-view" data-view="markets-short"><div class="page-grid" id="page-markets-short-grid"></div></section>
@@ -823,6 +830,7 @@ function showWorkspacePage(page,opts={}){
   sessionStorage.setItem('ai_trader_page',page);
   if(page==='automation')autoRefreshExecutionTruth();
   if(page==='history')autoRefreshTradeTimeline();
+  if(page==='overview')autoRefreshTradingReadiness();
   if(opts.scroll!==false)window.scrollTo({top:0,behavior:'smooth'});
   if(window.innerWidth<=760)closeSidebar();
 }
@@ -2641,6 +2649,61 @@ async function loadPretradeResearch(){
   finally{if(btn)btn.disabled=false}
 }
 
+let tradingReadinessLoaded=0;
+function autoRefreshTradingReadiness(){
+  if(Date.now()-tradingReadinessLoaded<120000)return;
+  tradingReadinessLoaded=Date.now();
+  void loadTradingReadiness();
+}
+async function loadTradingReadiness(){
+  const box=document.getElementById('autoReadinessOut');
+  const button=document.getElementById('autoReadinessRefresh');
+  if(!box)return;
+  if(button)button.disabled=true;
+  box.className='empty';box.textContent='Checking Alpaca paper fills and scheduled entry/exit worker health…';
+  try{
+    const load=async path=>{
+      const r=await apiFetch(path,{cache:'no-store'});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(path+': '+(d.error||'HTTP '+r.status));
+      return d;
+    };
+    const [fills,health]=await Promise.all([load('/api/trade-timeline'),load('/api/ops-health')]);
+    const statuses=health.jobs||[];
+    const interested=['auto-cycle','crypto-risk-cycle','equity-risk-cycle','options-risk-cycle'];
+    const rows=interested.map(job=>statuses.find(x=>x.job===job)||{job,state:'NOT_RECORDED'});
+    const unwell=rows.filter(x=>['LAST_RUN_FAILED','STALE','STALLED','AUDIT_INCOMPLETE','NO_RUN_RECORDED'].includes(x.state));
+    const total=Number(fills.stats?.actual_fill_events||0);
+    const botFills=(fills.events||[]).filter(x=>
+      (x.event==='FILL'||x.event==='PARTIAL_FILL')&&x.origin==='AI_TRADER').length;
+    const latest=(fills.events||[]).find(x=>x.event==='FILL'||x.event==='PARTIAL_FILL');
+    const timing=t=>t?new Date(t).toLocaleString():'None verified';
+    box.className='';
+    box.innerHTML=
+      '<div class="grid" style="margin-top:8px">'+
+        '<div class="card"><div class="label">Paper fill events</div><div class="value">'+total+'</div>'+
+        '<div class="muted tiny">Retrieved broker history, not predictions</div></div>'+
+        '<div class="card"><div class="label">Bot-attributed fill events</div><div class="value">'+botFills+'</div>'+
+        '<div class="muted tiny">Other broker-generated closes may be unattributed</div></div>'+
+        '<div class="card"><div class="label">Scheduled-worker warnings</div><div class="value '+(unwell.length?'negative':'positive')+'">'+unwell.length+'</div></div>'+
+      '</div>'+
+      (latest?'<div class="muted" style="margin-top:8px">Latest confirmed paper fill: '+esc(latest.symbol)+' · '+esc(timing(latest.timestamp))+'</div>':
+       '<div class="warning" style="margin-top:8px">No confirmed broker fill appeared in the retrieved history. Submissions and simulations are not trades.</div>')+
+      '<div class="timeline-feed">'+rows.map(x=>{
+        const troubled=['LAST_RUN_FAILED','STALE','STALLED','AUDIT_INCOMPLETE','NO_RUN_RECORDED'].includes(x.state);
+        return '<div class="timeline-entry"><div class="timeline-primary"><strong>'+esc(x.job)+'</strong>'+
+          ' · <span class="'+(troubled?'negative':'muted')+'">'+esc(x.state||'Unknown')+'</span></div>'+
+          '<div class="muted tiny">Last '+esc(x.last_action||'No recorded action')+' · '+
+          esc(timing(x.last_started_at))+'</div>'+
+          (x.last_error?'<div class="warning tiny">'+esc(x.last_error)+'</div>':'')+
+        '</div>';
+      }).join('')+'</div>'+
+      '<div class="muted tiny" style="margin-top:9px">Automation setting: '+(health.automatic_entries_enabled?'ENABLED':'DISABLED')+
+      ' · All fills shown are paper-money executions. Broker activity is limited to retrieved history; a bot identifier is not guaranteed on close orders.</div>';
+  }catch(e){box.className='warning';box.textContent='Trading status check unavailable: '+String(e.message||e).slice(0,210)}
+  finally{if(button)button.disabled=false}
+}
+
 async function loadExecutionTruth(){
   const btn=document.getElementById('executionTruth'),box=document.getElementById('executionTruthOut');
   if(!box)return;
@@ -2789,6 +2852,7 @@ document.getElementById('cryptoChallengers').addEventListener('click',()=>compar
 document.getElementById('researchCycle').addEventListener('click',runContinuousResearch);
 document.getElementById('opsHealth').addEventListener('click',loadOpsHealth);
 document.getElementById('executionTruth').addEventListener('click',loadExecutionTruth);
+document.getElementById('autoReadinessRefresh').addEventListener('click',loadTradingReadiness);
 document.getElementById('tradeResearchRefresh').addEventListener('click',loadPretradeResearch);
 document.getElementById('tradeTimelineRefresh').addEventListener('click',loadTradeTimeline);
 document.getElementById('tradeTimelineAsset').addEventListener('change',renderTradeTimeline);
