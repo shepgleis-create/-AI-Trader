@@ -12,6 +12,15 @@ Autonomous **paper-trading** research system using Alpaca market/trading APIs, G
 - **Automated entry capabilities:** Stocks and spot crypto have scheduled autonomous paper entry workers. They may correctly skip markets where no setup passes the policy. A higher trading frequency is not evidence of an edge.
 - **Real-money limit:** All automated order code remains restricted to Alpaca paper brokerage. No live-money mode was enabled, and no claim of learned profitability is made.
 
+## October 16 execution-reliability follow-up
+
+- **Stock one-trade-per-day limit counts *broker-reported fills***, not simply submitted orders. Any still-pending autonomous stock BUY continues to block additional entries until the brokerage confirms fill/cancellation; rejecting a limit order does not consume the full trading day.
+- **Independent fractional equity monitor uses the same robust market clock as the main stock worker**, including documented fallback to calendar data when the legacy v2 clock cannot be read. Provider errors now identify the failing endpoint. Production previously logged 108 HTTP 404 protection failures; the new fallback still requires a successful future scheduled cycle.
+- **Crypto liquidity checks now use the median dollar volume of up to seven *completed* trading-day bars**, instead of the current UTC-day snapshot volume that can reset near midnight. At least three completed sessions are required. The market-quality spread/volatility and paper budget gates remain.
+- **Overview shows an autonomous-trading reality check** with broker fill counts, latest confirmed execution and explicit scheduler failure states; History retains its detailed fill timeline.
+- **Gemini outages are visible:** recent logs showed 503 demand errors. Fallback decisions are quantitative and should never be reported as a successfully completed AI model review.
+- **Still not verified:** an actual subsequent stock/crypto fill after these fixes, live resolution of the protection worker, and full Actions CI. Options automatic entries remain research only.
+
 ## What it does now
 
 ### Dashboard security
