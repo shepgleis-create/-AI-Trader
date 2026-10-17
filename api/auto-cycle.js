@@ -11,6 +11,7 @@ import { candidateReadiness } from '../lib/readiness.js';
 import { newDecisionCycleId, saveDecisionMemory } from '../lib/decision-memory.js';
 import { fetchMarketClock } from '../lib/alpaca-clock.js';
 import { buildEquityEntryOrder } from '../lib/equity-order-policy.js';
+import {equityEntryQuota} from '../lib/equity-entry-quota.js';
 import {rankEquityShortlist} from '../lib/opportunity-ranking.js';
 import {identifyBotOwnedEquityPosition,identifyBotFractionalPosition} from '../lib/equity-protection.js';
 
@@ -206,9 +207,7 @@ async function handler(req, res) {
       o?.side === 'buy' &&
       isAutonomousLongClientId(o?.client_order_id)
     );
-    const entriesToday = autonomousParents.filter(o =>
-      String(o?.submitted_at || '').slice(0,10) === today
-    );
+    const entryQuota=equityEntryQuota(recentOrders,new Date(),MAX_AUTONOMOUS_ENTRIES_PER_DAY);
     const cooldownCutoff = Date.now() - SYMBOL_COOLDOWN_DAYS * 86400000;
     const recentlyTradedSymbols = new Set(
       autonomousParents
@@ -521,18 +520,20 @@ async function handler(req, res) {
       });
     }
 
-    if (entriesToday.length >= MAX_AUTONOMOUS_ENTRIES_PER_DAY) {
+    if (!entryQuota.canEnter) {
       logTraderEvent('entry_lock', {
-        reason: 'daily_entry_limit',
-        entries_today: entriesToday.length,
-        limit: MAX_AUTONOMOUS_ENTRIES_PER_DAY,
+        reason:entryQuota.reason,
+        filled_today:entryQuota.filled_today,
+        submitted_today:entryQuota.submitted_today,
+        pending_count:entryQuota.pending_count,
         enabled
       });
       actions.push({
-        type: 'entry_lock',
-        reason: 'Daily autonomous entry limit reached',
-        entries_today: entriesToday.length,
-        limit: MAX_AUTONOMOUS_ENTRIES_PER_DAY
+        type:'entry_lock',
+        reason:entryQuota.reason==='UNFILLED_AUTONOMOUS_ORDER_PENDING'
+          ?'A previous stock BUY order is still open; awaiting broker fill or cancellation'
+          :'Daily filled-trade limit reached',
+        quota:entryQuota
       });
       return res.status(200).json({
         ok: true,
