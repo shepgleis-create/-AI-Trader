@@ -62,3 +62,13 @@ test('a large price jump is identified as chase risk instead of guaranteeing pro
  assert.ok(result.signal.warnings.includes('EXTREME_MOVE_CHASE_RISK'));
  assert.equal(result.signal.execution_allowed,false);
 });
+
+test('low observed meme-coin turnover is still a research WATCH, with explicit risk warning',()=>{
+ const radar=new RollingCoinRadar({minMovePct:1,minWindowMs:20_000,
+  minDollarTurnover:10000,signalCooldownMs:120000});
+ radar.ingest(ticker(base,100,{size:'0.1'}));
+ const result=radar.ingest(ticker(base+30000,104,{size:'0.1'}));
+ assert.equal(result.signal.type,'LOW_TURNOVER_MOVE_WATCH');
+ assert.ok(result.signal.warnings.includes('LOW_OBSERVED_VENUE_TURNOVER'));
+ assert.equal(result.signal.execution_allowed,false);
+});
