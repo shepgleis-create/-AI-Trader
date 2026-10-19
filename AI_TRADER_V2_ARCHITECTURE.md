@@ -19,7 +19,8 @@ Using two engines has orchestration/operational costs. Initially use one unified
 ## Data and brokerage options (verify subscription terms before purchasing)
 
 - **Alpaca Basic:** free, broad US symbol catalog but equity real-time IEX-only; OPRA consolidated options feed is not included. **Algo Trader Plus:** $99/month individual for consolidated US equity feeds + OPRA options (approx. $1,188 / 12 months). https://docs.alpaca.markets/us/docs/about-market-data-api
-- **Tradier Brokerage:** its *funded brokerage API* offers consolidated real-time stocks and options market data to account holders, but sandbox data is delayed; entitlement, usage rules, account eligibility and real-time feed permissions must be checked. https://docs.tradier.com/docs/market-data — separate broker connection needed, not an automatic Alpaca upgrade.
+- **Tradier Brokerage:** consolidated real-time US equities/options market data is offered to eligible brokerage account holders, while the sandbox is **15-minute delayed**. Tradier also explicitly warns that WebSocket streaming cannot subscribe to the entire exchange indiscriminately; one stream session is permitted per account, and a short-lived session ID is required. https://docs.tradier.com/docs/market-data and https://docs.tradier.com/reference/websocket-market-data-streaming — separate brokerage permission/connection needed.
+- **QuantConnect Cloud LIVE Data Provider:** its live algorithm host includes a licensed consolidated SIP feed for US stocks (and options where supported), and its Alpaca brokerage integration can use that data. **Cloud researcher tier + compute node are paid**, and the feed is licensed to the running LEAN algorithm—not a license to rebroadcast the full market through Vercel. This could be cheaper overall than a standalone Alpaca Plus subscription, subject to a verified quote and actual algorithm needs. https://www.quantconnect.com/docs/v2/cloud-platform/datasets/quantconnect/us-equities and https://www.quantconnect.com/docs/v2/cloud-platform/live-trading/brokerages/alpaca and https://www.quantconnect.com/pricing
 - **Massive (formerly Polygon):** around $199/month each for full real-time US stocks Advanced or options Advanced individual plans; delayed plans cost less. Not a free consolidated live feed. https://massive.com/stocks and https://massive.com/pricing?product=options
 - **Coinbase Exchange public WebSocket:** stream USD cryptocurrency pairs without private broker credentials for research; exchange inventory is **not all coins** and venue data is not universal consolidated crypto. https://help.coinbase.com/en/developer-platform/websocket-feeds/exchange
 - **LEAN engine and Coinbase public feeds do not eliminate exchange licensing, broker qualifications, spread, slippage, or day-trading rules.** FINRA margin rule changes effective 2026-06-04 allow a transition until 2027-10-20; broker adoption and account status must be checked rather than assuming unlimited permitted intraday trades. https://www.investor.gov/introduction-investing/investing-basics/glossary/pattern-day-trader
@@ -62,14 +63,22 @@ Always-on service: Docker on a VM/VPS or other long-running worker host. Vercel 
 
 - [x] Existing app and paper orders preserved; migration work in `engine-v2/` only.
 - [x] Independent no-credentials Coinbase public market stream prototype and signal normalization (RESEARCH_ONLY, no trading).
+- [x] Optional Tradier read-only stock/options quote adapter with simulated tests (no connected brokerage credentials).
+- [x] Shared provider provenance contract prohibits a delayed sandbox quote being labeled as live and prohibits market data from becoming executable orders.
+- [x] Node 22/Docker sidecar configuration plus GitHub Actions test workflow and deterministic replay tests.
 - [x] Provider-agnostic engine message contract and replayable unit tests.
 - [ ] Deploy an **always-on worker host** (requires hosting connection/choice).
 - [ ] Install, license-check and validate upstream LEAN or Nautilus live instance; not already installed by scaffold.
-- [ ] Evaluate Tradier brokerage entitlement vs Alpaca Plus / Massive; connect only with user authorization.
+- [ ] Compare QuantConnect Cloud subscription + live node (licensed consolidated stream inside LEAN) with Tradier account entitlement vs Alpaca Plus / Massive; connect only with user authorization.
+- [ ] Confirm Tradier API real-time brokerage access, account eligibility, and permissible per-stream watchlist scope; no whole-exchange streaming assumed.
 - [ ] Evaluate Freqtrade/FreqAI with exchange-specific eligibility and dry-run.
 - [ ] Build robust account-wide broker adapter, idempotent order journal, fill reconciliation and kill switch.
 - [ ] Measure streaming coverage, outages, costs, latency, fill rate, net realized P/L and backtest-vs-forward divergence over meaningful paper sample.
 - [ ] Obtain explicit authorization and independent safeguards before any live-money operation.
+
+## Additional regulatory constraint
+
+FINRA's new intraday margin requirements became effective June 4, 2026, but firms have a transition period through **October 20, 2027**. Brokers can still apply the old pattern-day-trader restrictions during that period. Trading limits are determined by account type, brokerage-specific adoption, margin and options approvals, settled cash, market rules, venue restrictions, and order/connection limits; the software must read the broker's actual buying-power/permission state rather than assume "unlimited legally allowed trades." Source: https://www.investor.gov/introduction-investing/investing-basics/glossary/pattern-day-trader
 
 ## Migration cutover rules
 
