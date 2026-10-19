@@ -248,6 +248,29 @@ body{padding:0;overflow-x:hidden}
 #tradeTimelineCard select{background:#141d29;border:1px solid #36465b;color:#e4ebf6;border-radius:9px;padding:9px}
 @media(max-width:650px){.timeline-entry{padding:10px}.timeline-details{gap:5px 12px}#tradeTimelineCard button,#tradeTimelineCard select{flex:1;min-width:115px}}
 </style>
+<style>
+.mover-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}
+.mover-field{display:grid;gap:6px;font-size:12px;color:#b5c2d0}
+.mover-field select,.mover-field input{min-height:44px;width:100%;max-width:100%;background:#111d29;border:1px solid #324253;border-radius:10px;color:#e9f0f5;padding:10px;font-size:13px}
+.mover-periods{display:flex;gap:6px;background:#0d1520;border-radius:12px;padding:4px;margin:12px 0}
+.mover-periods .mover-period{flex:1;min-width:0;background:transparent;border:1px solid transparent;border-radius:9px;color:#adb9c6;font-weight:650;min-height:42px;padding:7px}
+.mover-periods .mover-period.active{background:#243349;color:#fafcff;border-color:#46617c}
+.mover-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.mover-toolbar button{width:auto;max-width:160px;min-height:40px;margin:0}
+.mover-note{padding:5px 0}
+.mover-list-head,.mover-item{display:grid;grid-template-columns:28px minmax(0,1fr) 112px 96px;gap:9px;align-items:center}
+.mover-list-head{color:#8d9cae;font-size:11px;padding:10px 7px;border-bottom:1px solid #2c3947}
+.mover-list-head span:last-child{text-align:right}
+.mover-item{border-bottom:1px solid #27313b;padding:12px 7px;min-height:70px}
+.mover-rank{font-size:12px;color:#a1aebe}
+.mover-symbol{display:flex;flex-direction:column;gap:3px;min-width:0;overflow-wrap:anywhere}
+.mover-symbol strong{font-size:15px;letter-spacing:.1px}
+.mover-flags{color:#e5ad66;font-size:10px;line-height:1.35}
+.mover-spark{display:block;width:108px;height:36px}
+.mover-change{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:14px}
+@media(max-width:650px){.mover-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.mover-field:last-child{grid-column:span 2}.mover-list-head,.mover-item{grid-template-columns:20px minmax(0,1fr) 80px 82px;gap:4px}.mover-spark{width:78px;height:30px}.mover-change{font-size:12px}.mover-symbol strong{font-size:13px}.mover-list-head{font-size:10px}}
+@media(max-width:360px){.mover-chart,.mover-list-head span:nth-child(3){display:none}.mover-list-head,.mover-item{grid-template-columns:18px minmax(0,1fr) 86px}}
+</style>
 </head>
 <body>
 <div id="loginOverlay">
@@ -278,6 +301,7 @@ body{padding:0;overflow-x:hidden}
     <div class="nav-section-title">Markets</div>
     <div class="nav-sub">
       <button class="nav-btn" data-page="markets-long"><span class="nav-icon">↑</span><span class="nav-label">Long Stocks</span></button>
+      <button class="nav-btn" data-page="markets-movers"><span class="nav-icon">↗</span><span class="nav-label">Market Movers</span></button>
       <button class="nav-btn" data-page="markets-short"><span class="nav-icon">↓</span><span class="nav-label">Shorts</span></button>
       <button class="nav-btn" data-page="markets-crypto"><span class="nav-icon">₿</span><span class="nav-label">Crypto</span></button>
       <button class="nav-btn" data-page="markets-options"><span class="nav-icon">Ω</span><span class="nav-label">Options</span></button>
@@ -329,6 +353,35 @@ body{padding:0;overflow-x:hidden}
         </div></section>
         <section class="page-view" data-view="portfolio"><div class="page-grid" id="page-portfolio-grid"></div></section>
         <section class="page-view" data-view="markets-long"><div class="page-grid" id="page-markets-long-grid"></div></section>
+        <section class="page-view" data-view="markets-movers"><div class="page-grid" id="page-markets-movers-grid">
+          <div class="card wide" id="moversCard">
+            <div class="label">Market Movers · Price Jumps & Dips</div>
+            <p class="muted">Find the biggest price moves even when they do not meet the autonomous bot's conservative entry criteria. Daily results use Alpaca movers where available; weekly/monthly rankings use the retrieved candidate universe.</p>
+            <div class="mover-controls">
+              <label class="mover-field">Market
+                <select id="moverMarket"><option value="stocks">Stocks · including penny movers</option><option value="crypto">Crypto · including altcoins</option></select>
+              </label>
+              <label class="mover-field">Movement
+                <select id="moverDirection"><option value="gainers">Price jumps · gainers</option><option value="losers">Price dips · decliners</option></select>
+              </label>
+              <label class="mover-field">Search symbol
+                <input id="moverSearch" type="search" inputmode="search" autocomplete="off" placeholder="e.g. WORX, ARB" />
+              </label>
+            </div>
+            <div class="mover-periods" role="group" aria-label="Price change timeframe">
+              <button class="mover-period active" type="button" data-mover-window="1d" aria-pressed="true">Daily · 1D</button>
+              <button class="mover-period" type="button" data-mover-window="1w" aria-pressed="false">Weekly · 1W</button>
+              <button class="mover-period" type="button" data-mover-window="1m" aria-pressed="false">Monthly · 1M</button>
+            </div>
+            <div class="mover-toolbar">
+              <span id="moverSource" class="muted tiny">Loading market source…</span>
+              <button id="moverRefresh" type="button">Refresh Movers</button>
+            </div>
+            <div id="moverWarnings" aria-live="polite"></div>
+            <div id="moverRows" class="mover-list" aria-live="polite">Open this screen to view current market movers.</div>
+            <div class="muted tiny" style="margin-top:12px">Discovering a +100% mover after it has jumped does not mean the AI could have bought before the move. Penny stocks and meme coins can have extreme spreads, halts, dilution, slippage and fast reversals. This screen does not bypass paper-trading risk controls.</div>
+          </div>
+        </div></section>
         <section class="page-view" data-view="markets-short"><div class="page-grid" id="page-markets-short-grid"></div></section>
         <section class="page-view" data-view="markets-crypto"><div class="page-grid" id="page-markets-crypto-grid"></div></section>
         <section class="page-view" data-view="markets-options"><div class="page-grid" id="page-markets-options-grid"></div></section>
@@ -743,6 +796,10 @@ const workspacePages={
     title:'Long Stocks',
     subtitle:'Bullish U.S. stock and ETF scanning with guarded paper execution.'
   },
+  'markets-movers':{
+    title:'Market Movers',
+    subtitle:'Daily, weekly and monthly stock and crypto gainers, dips, charts and early-move research.'
+  },
   'markets-short':{
     title:'Shorts',
     subtitle:'Bearish setups, borrow status, squeeze risk and protected paper shorts.'
@@ -830,6 +887,7 @@ function showWorkspacePage(page,opts={}){
   sessionStorage.setItem('ai_trader_page',page);
   if(page==='automation')autoRefreshExecutionTruth();
   if(page==='history')autoRefreshTradeTimeline();
+  if(page==='markets-movers')autoRefreshMarketMovers();
   if(page==='overview')autoRefreshTradingReadiness();
   if(opts.scroll!==false)window.scrollTo({top:0,behavior:'smooth'});
   if(window.innerWidth<=760)closeSidebar();
@@ -2655,6 +2713,78 @@ function autoRefreshTradingReadiness(){
   tradingReadinessLoaded=Date.now();
   void loadTradingReadiness();
 }
+let moverPeriod='1d',moverSnapshot=null,moverRequest=0,moverLoadedAt=0;
+function autoRefreshMarketMovers(){
+  if(moverSnapshot&&Date.now()-moverLoadedAt<90000){renderMarketMovers();return;}
+  void loadMarketMovers();
+}
+function moverSparkline(series=[],positive=true){
+  const clean=(Array.isArray(series)?series:[]).map(Number).filter(Number.isFinite);
+  if(clean.length<2)return '<span class="muted tiny">No chart</span>';
+  const lo=Math.min(...clean),hi=Math.max(...clean),range=Math.max(1e-9,hi-lo);
+  const points=clean.map((v,i)=>{
+    const x=3+i*106/Math.max(1,clean.length-1);
+    const y=31-(v-lo)/range*27;
+    return x.toFixed(1)+','+y.toFixed(1);
+  }).join(' ');
+  return '<svg class="mover-spark" viewBox="0 0 112 34" role="img" aria-label="'+
+    (positive?'Rising':'Falling')+' historical trend"><polyline points="'+points+
+    '" fill="none" stroke="'+(positive?'#34d680':'#f27070')+
+    '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+}
+function renderMarketMovers(){
+  const out=document.getElementById('moverRows'),source=document.getElementById('moverSource');
+  const warn=document.getElementById('moverWarnings');
+  if(!out||!moverSnapshot)return;
+  const d=moverSnapshot;
+  const q=(document.getElementById('moverSearch')?.value||'').trim().toUpperCase();
+  const field=moverPeriod==='1w'?'week_pct':moverPeriod==='1m'?'month_pct':'day_pct';
+  const rows=(d.rows||[]).filter(r=>!q||String(r.symbol).toUpperCase().includes(q));
+  if(source)source.textContent=(d.source||'Unknown source')+' · '+(d.coverage?.candidates_observed||0)+
+    ' priced candidates · '+(d.updated_at?new Date(d.updated_at).toLocaleString():'No timestamp');
+  if(warn){
+    const warnings=[...(d.warnings||[])];
+    if(d.coverage?.universe_note)warnings.unshift(d.coverage.universe_note);
+    if(d.coverage?.subscription_restriction)warnings.push('Primary screener: '+d.coverage.subscription_restriction);
+    warn.innerHTML=warnings.map(t=>'<div class="muted tiny mover-note">'+esc(t)+'</div>').join('');
+  }
+  const title=moverPeriod==='1d'?'1D':moverPeriod==='1w'?'1W':'1M';
+  out.innerHTML=rows.length?'<div class="mover-list-head"><span>#</span><span>Symbol / research warnings</span><span>Trend</span><span>'+title+' % change</span></div>'+
+    rows.map((r,i)=>{
+      const value=Number(r[field]),up=value>=0;
+      const pct=Number.isFinite(value)?(up?'+':'')+value.toFixed(2)+'%':'—';
+      const flags=(r.risk_flags||[]).slice(0,2);
+      return '<div class="mover-item">'+
+        '<span class="mover-rank">'+(i+1)+'</span>'+
+        '<div class="mover-symbol"><strong>'+esc(r.symbol)+'</strong>'+
+          '<span class="muted tiny">'+(r.price==null?'Price unavailable':money(Number(r.price)))+'</span>'+
+          (flags.length?'<span class="mover-flags">'+flags.map(f=>esc(String(f).replace(/_/g,' '))).join(' · ')+'</span>':'')+
+        '</div>'+
+        '<div class="mover-chart">'+moverSparkline(r.sparkline,up)+'</div>'+
+        '<strong class="mover-change '+(up?'positive':'negative')+'">'+esc(pct)+'</strong>'+
+      '</div>';
+    }).join(''):'<div class="empty">No matching movers in the available data. This is not proof the whole market has no movers; check source/coverage above.</div>';
+}
+async function loadMarketMovers(){
+  const out=document.getElementById('moverRows'),refresh=document.getElementById('moverRefresh');
+  if(!out)return;
+  const market=document.getElementById('moverMarket').value;
+  const direction=document.getElementById('moverDirection').value;
+  const token=++moverRequest;
+  if(refresh)refresh.disabled=true;
+  out.textContent='Scanning available stocks and crypto movers, including speculative names…';
+  try{
+    const params=new URLSearchParams({market,window:moverPeriod,direction});
+    const response=await apiFetch('/api/market-movers?'+params.toString(),{cache:'no-store'});
+    const d=await response.json().catch(()=>({}));
+    if(token!==moverRequest)return;
+    if(!response.ok)throw new Error((d.error||'Movers unavailable')+(d.detail?' · '+d.detail:''));
+    moverSnapshot=d;moverLoadedAt=Date.now();
+    renderMarketMovers();
+  }catch(e){if(token===moverRequest){out.className='mover-list warning';out.textContent=String(e.message||e).slice(0,260)}}
+  finally{if(token===moverRequest&&refresh){refresh.disabled=false;out.classList.add('mover-list')}}
+}
+
 async function loadTradingReadiness(){
   const box=document.getElementById('autoReadinessOut');
   const button=document.getElementById('autoReadinessRefresh');
@@ -2853,6 +2983,17 @@ document.getElementById('researchCycle').addEventListener('click',runContinuousR
 document.getElementById('opsHealth').addEventListener('click',loadOpsHealth);
 document.getElementById('executionTruth').addEventListener('click',loadExecutionTruth);
 document.getElementById('autoReadinessRefresh').addEventListener('click',loadTradingReadiness);
+document.getElementById('moverRefresh').addEventListener('click',loadMarketMovers);
+document.getElementById('moverMarket').addEventListener('change',loadMarketMovers);
+document.getElementById('moverDirection').addEventListener('change',loadMarketMovers);
+document.getElementById('moverSearch').addEventListener('input',renderMarketMovers);
+document.querySelectorAll('[data-mover-window]').forEach(btn=>btn.addEventListener('click',()=>{
+  moverPeriod=btn.dataset.moverWindow;
+  document.querySelectorAll('[data-mover-window]').forEach(b=>{
+    const active=b===btn;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
+  });
+  loadMarketMovers();
+}));
 document.getElementById('tradeResearchRefresh').addEventListener('click',loadPretradeResearch);
 document.getElementById('tradeTimelineRefresh').addEventListener('click',loadTradeTimeline);
 document.getElementById('tradeTimelineAsset').addEventListener('change',renderTradeTimeline);
