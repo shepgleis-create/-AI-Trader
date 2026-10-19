@@ -1,5 +1,5 @@
 # AI Trader — Development checklist
-Updated: 2026-10-16
+Updated: 2026-10-19
 Target: existing `shepgleis-create/-AI-Trader` repository and `ai-trader` Vercel project.
 
 Status language:
@@ -15,6 +15,26 @@ Status language:
 - [x] Neon Decision Memory, scheduled outcome grading, research statistics
 - [x] Existing responsive dark dashboard and multi-page navigation
 - [x] Existing stock/options/crypto entry routes and operational journal
+
+## October 19 — open-source architecture migration started
+- [x] Confirmed Alpaca Basic has IEX-only stock real-time and indicative options data; Algo Trader Plus 99 USD per month for individual full US stock + OPRA data.
+- [x] Evaluated upstream QuantConnect LEAN (multi-asset), Freqtrade/FreqAI (crypto), NautilusTrader (Rust/Python) and tradeoffs.
+- [x] Identified QuantConnect Cloud licensed consolidated equity/option live algorithm feed as a possible lower-cost alternative to standalone Alpaca SIP; paid cloud tier/node and usage/license restrictions remain.
+- [x] Identified Tradier brokerage-entitled real-time US equity/option feed; paper sandbox delayed; streaming explicitly limits whole-exchange bulk requests.
+- [x] Wrote AI_TRADER_V2_ARCHITECTURE.md and linked migration entry points in README.
+- [x] Created independent Node 22 Coinbase public USD crypto WebSocket watcher with reconnection, rate-bounded data validation and local health/signals API.
+- [x] Created Dockerfile, Compose deployment and RESEARCH_ONLY environment example; no broker keys, no order placement endpoints.
+- [x] Added Tradier read-only quote adapter with conditional live broker entitlement, delayed sandbox metadata and 40-symbol REST watchlist cap.
+- [x] Added strict cross-provider market-data provenance contract so delayed sandbox quotes cannot masquerade as real-time data.
+- [x] Created GitHub Actions V2 workflow for Node syntax, regression suite and execution-API reference guard.
+- [x] Ran 17 isolated deterministic JavaScript unit checks (all passed) covering crypto venue data, Tradier quotes, watch limits, price acceleration and provider identity.
+- [x] Added mocked end-to-end worker startup/health/signal tests to repository for actual Node CI execution.
+- [ ] Full Node 22 Actions workflow reported passing for latest revision (not yet verified; integration tests pending).
+- [ ] Always-on Docker host connected and public Coinbase streaming observed live.
+- [ ] Upstream LEAN or Freqtrade installed/integrated/tested; neither is in active execution today.
+- [ ] Tradier brokerage account connected / eligible full-market data or QuantConnect Cloud live algorithm activated.
+- [ ] One reconciled paper stock/options/crypto signal-to-fill cycle under the new engine.
+- [ ] Cutover gate: shared account-wide risk, kill switch, real fill timestamps and measured net P/L.
 
 ## October 16 follow-up — broker reliability and real-trade evidence
 - [x] Diagnosed one actual EWZ fractional paper buy submitted at 2026-10-16T14:15:20Z and recorded as pending_new, not a verified fill
