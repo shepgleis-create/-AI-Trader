@@ -5,6 +5,7 @@ const SCHEDULES={
   'auto-cycle':{kind:'weekday',minutes:15},
   'equity-risk-cycle':{kind:'weekday',minutes:5},
   'crypto-risk-cycle':{kind:'continuous',minutes:15},
+  'mover-radar-cycle':{kind:'continuous',minutes:15},
   'options-risk-cycle':{kind:'weekday',minutes:15},
   'outcome-cycle':{kind:'weekday_daily',minutes:1440},
   'shadow-router-cycle':{kind:'weekday_sparse',minutes:120},
@@ -15,7 +16,7 @@ const SCHEDULES={
 
 function expectedNow(job,now){
   const day=now.getUTCDay(),hour=now.getUTCHours(),minute=now.getUTCMinutes();
-  if(job==='crypto-risk-cycle'||job==='research-cycle')return true;
+  if(job==='crypto-risk-cycle'||job==='research-cycle'||job==='mover-radar-cycle')return true;
   if(day===0||day===6)return false;
   if(job==='outcome-cycle')return hour===22 && minute>=15;
   if(job==='forward-grade-cycle')return hour===22 && minute>=45;
