@@ -1,0 +1,25 @@
+services:
+  coinbase-research:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    environment:
+      TRADING_MODE: RESEARCH_ONLY
+      HEALTH_HOST: 0.0.0.0
+      HEALTH_PORT: "8787"
+      MAX_PAIRS: "${MAX_PAIRS:-150}"
+      WATCH_PAIRS: "${WATCH_PAIRS:-}"
+      MIN_WATCH_MOVE_PCT: "${MIN_WATCH_MOVE_PCT:-1.5}"
+      MIN_OBSERVED_TURNOVER_USD: "${MIN_OBSERVED_TURNOVER_USD:-300}"
+    ports:
+      - "127.0.0.1:8787:8787"
+    mem_limit: 256m
+    cpus: 1.0
