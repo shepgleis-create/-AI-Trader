@@ -1,3 +1,16 @@
+## Open-source engine migration — October 19, 2026
+
+AI Trader V2 is being developed in this EXISTING repository. The current Vercel dashboard, paper Alpaca orders and Neon history remain intact until migration is proven.
+
+- [V2 architecture, engine and data-provider comparison](./AI_TRADER_V2_ARCHITECTURE.md)
+- [Standalone read-only streaming crypto research worker and tests](./engine-v2/README.md)
+- [Development checklist](./AI_TRADER_DEVELOPMENT_CHECKLIST.md)
+
+V2 status: The read-only Coinbase Exchange WebSocket worker is committed with a Docker configuration but is NOT yet hosted on an always-on server. Its signals are WATCH-only and cannot place orders. LEAN/Freqtrade are shortlisted open-source upstream engines, not installed in production. Optional Tradier market-data adapter is read-only and requires an entitled brokerage account.
+
+Free Alpaca stock real-time prices are IEX only, not consolidated U.S. exchanges. QuantConnect Cloud LEAN licensed live algorithms and Tradier brokerage entitlements may provide more market coverage, but have compute/brokerage permissions and restrictions. No new subscription, broker connection or live-money orders have been enabled.
+
+---
 # AI Trader
 
 Autonomous **paper-trading** research system using Alpaca market/trading APIs, Gemini for a constrained decision layer, and deterministic risk controls.
