@@ -1,0 +1,36 @@
+name: AI Trader V2 Streaming Research Tests
+
+on:
+  push:
+    paths:
+      - 'engine-v2/**'
+      - '.github/workflows/ai-trader-v2-streaming.yml'
+  pull_request:
+    paths:
+      - 'engine-v2/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-streaming-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate standalone worker and market event syntax
+        run: |
+          node --check engine-v2/stream-core.mjs
+          node --check engine-v2/coinbase-worker.mjs
+      - name: Run deterministic streaming research tests
+        run: npm --prefix engine-v2 test
+      - name: Verify production trading credentials are not referenced
+        run: |
+          if grep -R -E 'ALPACA_SECRET_KEY|TRADIER_ACCESS_TOKEN|COINBASE_API_SECRET|submit_order|place_order|/v2/orders' engine-v2/*.mjs; then
+            echo "Execution-capable broker reference found in read-only research worker"
+            exit 1
+          fi
