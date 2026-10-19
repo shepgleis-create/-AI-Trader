@@ -44,6 +44,14 @@ The health API is bound to **127.0.0.1 only** by default; Docker forwards host 1
 - A 24/7 host is required. Vercel serverless Functions cannot retain a permanent WebSocket connection.
 - No live result is claimed until a real worker host connects and its logs, reconnect behavior and source coverage are verified.
 
+## Optional U.S. stock/options data adapter
+
+`tradier-market.mjs` adds a read-only adapter for **Tradier Brokerage** real-time quotes (with the required entitled account) and **Tradier sandbox delayed quotes**. It fetches at most 40 explicitly selected symbols per request and can build a short-lived WebSocket watchlist subscription after a broker-issued session ID is supplied. **It is NOT connected to a real Tradier account, and it does NOT place orders.** Tradier forbids attempts to subscribe to the whole exchange in one stream. See https://docs.tradier.com/docs/streaming and https://docs.tradier.com/docs/market-data.
+
+`event-contract.mjs` validates that research ticks disclose exact source/venue/entitlement; delayed sandbox data may never be labeled consolidated real-time. All providers emit `research_only: true` and `execution_allowed: false`. Automated stock/options execution will ultimately live inside an independently tested **LEAN** brokerage adapter, not in this data adapter.
+
+**Potential low-cost choice:** licensed SIP data is supplied inside supported *QuantConnect Cloud LEAN live algorithms*, but the organization tier and node have separate costs. It cannot legally be assumed to feed unlimited third-party Vercel clients. Compare its all-in subscription against an eligible Tradier Brokerage account and Alpaca's individual $99/month data plan *before purchasing anything*.
+
 ## Machine-readable market event
 
 ```json
@@ -62,7 +70,7 @@ The health API is bound to **127.0.0.1 only** by default; Docker forwards host 1
 }
 ```
 
-`stream-core.mjs` validates events and emits bounded `PRICE_ACCELERATION_WATCH` messages with observed return, quote spread, limited venue turnover and uncertainty labels. New adapters (Tradier stock/options, other crypto exchanges, and LEAN/Freqtrade execution) must normalize into their own explicit provider/venue schema and cannot silently relabel one venue as the whole market.
+`stream-core.mjs` and `event-contract.mjs` validate events and emits bounded `PRICE_ACCELERATION_WATCH` messages with observed return, quote spread, limited venue turnover and uncertainty labels. New adapters (Tradier stock/options, other crypto exchanges, and LEAN/Freqtrade execution) must normalize into their own explicit provider/venue schema and cannot silently relabel one venue as the whole market.
 
 ## Next migration milestone
 
