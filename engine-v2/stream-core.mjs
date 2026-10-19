@@ -76,11 +76,14 @@ export class RollingCoinRadar{
     if(minutes*60000<this.config.minWindowMs)return {accepted:true,signal:null};
     const changePct=(event.price/first.price-1)*100;
     const turnover=state.points.reduce((n,p)=>n+p.turnover,0);
-    if(!(changePct>=this.config.minMovePct)||turnover<this.config.minDollarTurnover||
+    if(!(changePct>=this.config.minMovePct)||
       t-state.last_signal_at<this.config.signalCooldownMs)
       return {accepted:true,signal:null};
-    // An extreme pump is for investigation, not an implied entry.
-    const alert='PRICE_ACCELERATION_WATCH';
+    // The ticker-batch feed samples venue activity; low observed size must
+    // downgrade evidence, not hide a legitimate rapid move from DISCOVERY.
+    // Nothing emitted by this service authorizes a broker order.
+    const volumeObserved=turnover>=this.config.minDollarTurnover;
+    const alert=volumeObserved?'PRICE_ACCELERATION_WATCH':'LOW_TURNOVER_MOVE_WATCH';
     const spreadValid=Number.isFinite(event.spread_bps)&&
       event.spread_bps>=0&&event.spread_bps<=this.config.maxSpreadBps;
     const signal={
@@ -96,6 +99,7 @@ export class RollingCoinRadar{
       warnings:[
         ...(changePct>=20?['EXTREME_MOVE_CHASE_RISK']:[]),
         ...(!spreadValid?['MISSING_OR_WIDE_EXCHANGE_QUOTE']:[]),
+        ...(!volumeObserved?['LOW_OBSERVED_VENUE_TURNOVER']:[]),
         ...(event.timestamp_origin!=='EXCHANGE'?['UNVERIFIED_EXCHANGE_TIMESTAMP']:[])
       ],
       execution_allowed:false,
