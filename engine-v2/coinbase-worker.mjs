@@ -117,8 +117,9 @@ export async function startResearchWorker({
  connect();
  const watchdog=setInterval(()=>{
   if(stopping)return;
-  if(connected&&lastMessageAt&&Date.now()-Date.parse(lastMessageAt)>120000){
-   log({event:'feed_stale',seconds_since_message:Math.round((Date.now()-Date.parse(lastMessageAt))/1000)});
+  const heartbeat=lastMessageAt||lastConnectedAt;
+  if(connected&&heartbeat&&Date.now()-Date.parse(heartbeat)>120000){
+   log({event:'feed_stale',seconds_since_message:Math.round((Date.now()-Date.parse(heartbeat))/1000)});
    try{socket?.close()}catch{}
   }
  },20000);
