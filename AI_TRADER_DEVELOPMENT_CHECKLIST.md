@@ -22,14 +22,15 @@ Status language:
 - [x] Identified QuantConnect Cloud licensed consolidated equity/option live algorithm feed as a possible lower-cost alternative to standalone Alpaca SIP; paid cloud tier/node and usage/license restrictions remain.
 - [x] Identified Tradier brokerage-entitled real-time US equity/option feed; paper sandbox delayed; streaming explicitly limits whole-exchange bulk requests.
 - [x] Wrote AI_TRADER_V2_ARCHITECTURE.md and linked migration entry points in README.
-- [x] Created independent Node 22 Coinbase public USD crypto WebSocket watcher with reconnection, rate-bounded data validation and local health/signals API.
+- [x] Created independent Node 22 Coinbase public USD crypto WebSocket watcher with reconnection, stale-socket watchdog and local health/signals API.
+- [x] Changed low-volume crypto acceleration to a labeled WATCH instead of suppressing discovery; still never an executable trade.
 - [x] Created Dockerfile, Compose deployment and RESEARCH_ONLY environment example; no broker keys, no order placement endpoints.
 - [x] Added Tradier read-only quote adapter with conditional live broker entitlement, delayed sandbox metadata and 40-symbol REST watchlist cap.
 - [x] Added strict cross-provider market-data provenance contract so delayed sandbox quotes cannot masquerade as real-time data.
 - [x] Created GitHub Actions V2 workflow for Node syntax, regression suite and execution-API reference guard.
-- [x] Ran 17 isolated deterministic JavaScript unit checks (all passed) covering crypto venue data, Tradier quotes, watch limits, price acceleration and provider identity.
+- [x] Ran 18 isolated deterministic JavaScript unit checks (all passed) covering crypto venue data, Tradier quotes, watch limits, thin-liquidity acceleration and provider identity.
 - [x] Added mocked end-to-end worker startup/health/signal tests to repository for actual Node CI execution.
-- [ ] Full Node 22 Actions workflow reported passing for latest revision (not yet verified; integration tests pending).
+- [ ] Full Node 22 Actions workflow reported passing for latest revision (only Vercel check is confirmed; the GitHub workflow query exposes no run, Node integration tests pending).
 - [ ] Always-on Docker host connected and public Coinbase streaming observed live.
 - [ ] Upstream LEAN or Freqtrade installed/integrated/tested; neither is in active execution today.
 - [ ] Tradier brokerage account connected / eligible full-market data or QuantConnect Cloud live algorithm activated.
