@@ -24,7 +24,7 @@ export function normalizeCoinbaseTicker(message,receivedAt=Date.now()){
     last_size:Math.max(0,finite(message.last_size)||0),
     event_at:new Date(eventAt).toISOString(),received_at:new Date(receivedAt).toISOString(),
     timestamp_origin:Number.isFinite(stamp)?'EXCHANGE':'RECEIPT_FALLBACK',
-    provider_coverage:'COINBASE_EXCHANGE_PAIRS_ONLY',research_only:true
+    provider_coverage:'COINBASE_EXCHANGE_PAIRS_ONLY',research_only:true,execution_allowed:false
   };
 }
 
